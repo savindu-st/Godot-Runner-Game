@@ -75,9 +75,11 @@ jobs:
           fi
 
       - name: Calculate Key Hash
+        id: get-hash
         if: steps.check-custom-template.outputs.has_committed != 'true'
         run: |
-          echo -n "${{ env.SAN_KEY }}" | sha256sum | awk '{print $1}' > key_hash.txt
+          HASH=$(echo -n "${{ env.SAN_KEY }}" | sha256sum | awk '{print $1}')
+          echo "key-hash=$HASH" >> $GITHUB_OUTPUT
 
       - name: Cache Custom Web Template
         if: steps.check-custom-template.outputs.has_committed != 'true'
@@ -85,7 +87,7 @@ jobs:
         id: template-cache
         with:
           path: ~/.local/share/godot/export_templates/
-          key: godot-custom-web-template-${{ env.GODOT_VERSION }}-${{ hashFiles('key_hash.txt') }}
+          key: godot-custom-web-template-v2-${{ env.GODOT_VERSION }}-${{ steps.get-hash.outputs.key-hash }}
 
       - name: Setup Emscripten (emsdk)
         if: steps.check-custom-template.outputs.has_committed != 'true' && steps.template-cache.outputs.cache-hit != 'true'
