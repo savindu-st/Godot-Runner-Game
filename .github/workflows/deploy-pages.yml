@@ -51,6 +51,81 @@ jobs:
       - name: Verify Godot
         run: godot --version
 
+      - name: Verify Encryption Key Secret
+        run: |
+          if [ -z "${{ secrets.GODOT_ENCRYPTION_KEY }}" ]; then
+            echo "::error::The GODOT_ENCRYPTION_KEY repository secret is missing. Please generate a 256-bit AES key (64-character hex string) and add it to your GitHub repository secrets."
+            exit 1
+          fi
+
+      - name: Check for Committed Custom Template
+        id: check-custom-template
+        run: |
+          if [ -f custom_templates/web_release.zip ]; then
+            echo "has_committed=true" >> $GITHUB_OUTPUT
+            TEMPLATE_DIR=$(find ~/.local/share/godot/export_templates/ -mindepth 1 -maxdepth 1 -type d | head -n 1)
+            cp custom_templates/web_release.zip "$TEMPLATE_DIR/web_release.zip"
+            echo "Copied committed template to $TEMPLATE_DIR/web_release.zip"
+          else
+            echo "has_committed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Calculate Key Hash
+        if: steps.check-custom-template.outputs.has_committed != 'true'
+        run: |
+          echo -n "${{ secrets.GODOT_ENCRYPTION_KEY }}" | sha256sum | awk '{print $1}' > key_hash.txt
+
+      - name: Cache Custom Web Template
+        if: steps.check-custom-template.outputs.has_committed != 'true'
+        uses: actions/cache@v4
+        id: template-cache
+        with:
+          path: ~/.local/share/godot/export_templates/
+          key: godot-custom-web-template-${{ env.GODOT_VERSION }}-${{ hashFiles('key_hash.txt') }}
+
+      - name: Setup Emscripten (emsdk)
+        if: steps.check-custom-template.outputs.has_committed != 'true' && steps.template-cache.outputs.cache-hit != 'true'
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.64
+
+      - name: Install SCons
+        if: steps.check-custom-template.outputs.has_committed != 'true' && steps.template-cache.outputs.cache-hit != 'true'
+        run: |
+          python3 -m pip install scons
+
+      - name: Clone Godot Source & Compile Custom Web Template
+        if: steps.check-custom-template.outputs.has_committed != 'true' && steps.template-cache.outputs.cache-hit != 'true'
+        env:
+          SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.GODOT_ENCRYPTION_KEY }}
+        run: |
+          echo "Cloning Godot version ${{ env.GODOT_VERSION }}..."
+          if git clone --depth 1 --branch ${{ env.GODOT_VERSION }}-stable https://github.com/godotengine/godot.git; then
+            echo "Cloned stable tag successfully."
+          elif git clone --depth 1 --branch ${{ env.GODOT_VERSION }} https://github.com/godotengine/godot.git; then
+            echo "Cloned branch/tag successfully."
+          else
+            echo "Failed to clone specific version, cloning master..."
+            git clone --depth 1 https://github.com/godotengine/godot.git
+          fi
+          
+          cd godot
+          echo "Compiling templates with encryption key..."
+          scons platform=web target=template_release threads=no
+          
+          TEMPLATE_DIR=$(find ~/.local/share/godot/export_templates/ -mindepth 1 -maxdepth 1 -type d | head -n 1)
+          echo "Creating web_release.zip in $TEMPLATE_DIR"
+          cd bin
+          zip -q -9 "$TEMPLATE_DIR/web_release.zip" godot.web.template_release.wasm32.*
+
+      - name: Write export credentials config
+        run: |
+          mkdir -p .godot
+          cat <<EOF > .godot/export_credentials.cfg
+          [preset.0]
+          script_encryption_key="${{ secrets.GODOT_ENCRYPTION_KEY }}"
+          EOF
+
       - name: Configure API URL for production
         run: |
           if [ -z "$API_BASE_URL" ]; then
