@@ -51,12 +51,16 @@ jobs:
       - name: Verify Godot
         run: godot --version
 
-      - name: Verify Encryption Key Secret
+      - name: Verify and Sanitize Encryption Key
+        id: sanitize-key
         run: |
           if [ -z "${{ secrets.GODOT_ENCRYPTION_KEY }}" ]; then
             echo "::error::The GODOT_ENCRYPTION_KEY repository secret is missing. Please generate a 256-bit AES key (64-character hex string) and add it to your GitHub repository secrets."
             exit 1
           fi
+          SAN_KEY=$(echo -n "${{ secrets.GODOT_ENCRYPTION_KEY }}" | tr -d '\r\n\t ')
+          echo "SAN_KEY=$SAN_KEY" >> $GITHUB_ENV
+          echo "::add-mask::$SAN_KEY"
 
       - name: Check for Committed Custom Template
         id: check-custom-template
@@ -73,7 +77,7 @@ jobs:
       - name: Calculate Key Hash
         if: steps.check-custom-template.outputs.has_committed != 'true'
         run: |
-          echo -n "${{ secrets.GODOT_ENCRYPTION_KEY }}" | sha256sum | awk '{print $1}' > key_hash.txt
+          echo -n "${{ env.SAN_KEY }}" | sha256sum | awk '{print $1}' > key_hash.txt
 
       - name: Cache Custom Web Template
         if: steps.check-custom-template.outputs.has_committed != 'true'
@@ -97,7 +101,7 @@ jobs:
       - name: Clone Godot Source & Compile Custom Web Template
         if: steps.check-custom-template.outputs.has_committed != 'true' && steps.template-cache.outputs.cache-hit != 'true'
         env:
-          SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.GODOT_ENCRYPTION_KEY }}
+          SCRIPT_AES256_ENCRYPTION_KEY: ${{ env.SAN_KEY }}
         run: |
           echo "Cloning Godot version ${{ env.GODOT_VERSION }}..."
           if git clone --depth 1 --branch ${{ env.GODOT_VERSION }}-stable https://github.com/godotengine/godot.git; then
@@ -123,7 +127,7 @@ jobs:
           mkdir -p .godot
           cat <<EOF > .godot/export_credentials.cfg
           [preset.0]
-          script_encryption_key="${{ secrets.GODOT_ENCRYPTION_KEY }}"
+          script_encryption_key="${{ env.SAN_KEY }}"
           EOF
 
       - name: Configure API URL for production
