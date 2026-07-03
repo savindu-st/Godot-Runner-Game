@@ -31,7 +31,7 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           # Point this to the directory containing your locally exported web build
-          path: dist/
+          path: build/web
 
       - name: Deploy to GitHub Pages
         id: deployment
