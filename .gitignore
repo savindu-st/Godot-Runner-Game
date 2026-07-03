@@ -7,7 +7,7 @@ export.cfg
 .godot/
 
 # Web/HTML5 export output
-# build/
+build/
 
 # Local self-signed TLS cert for the dev server
 cert.pem

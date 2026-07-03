@@ -1,4 +1,14 @@
-name: Deploy Pre-built Web Files to GitHub Pages
+# Deploy static Godot web build to GitHub Pages.
+#
+# Setup (once):
+#   1. Repo → Settings → Pages → Source: GitHub Actions
+#   2. Repo → Settings → Secrets and variables → Actions → Variables:
+#        API_BASE_URL = https://api.yoursite.com   (your production backend, HTTPS)
+#
+# Backend CORS_ORIGIN must match this site origin (no path), e.g.:
+#   https://moraspirit.github.io
+
+name: Deploy GitHub Pages
 
 on:
   push:
@@ -6,7 +16,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -20,14 +30,189 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+
+    env:
+      GODOT_VERSION: 4.6.3
+      EXPORT_PRESET: Web
+      API_BASE_URL: ${{ vars.API_BASE_URL }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Godot
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: ${{ env.GODOT_VERSION }}
+          use-dotnet: false
+          include-templates: true
+
+      - name: Verify Godot
+        run: godot --version
+
+      - name: Verify and Sanitize Encryption Key
+        id: sanitize-key
+        run: |
+          if [ -z "${{ secrets.GODOT_ENCRYPTION_KEY }}" ]; then
+            echo "::error::The GODOT_ENCRYPTION_KEY repository secret is missing. Please generate a 256-bit AES key (64-character hex string) and add it to your GitHub repository secrets."
+            exit 1
+          fi
+          SAN_KEY=$(echo -n "${{ secrets.GODOT_ENCRYPTION_KEY }}" | tr -d '\r\n\t ')
+          echo "SAN_KEY=$SAN_KEY" >> $GITHUB_ENV
+          echo "::add-mask::$SAN_KEY"
+
+      - name: Check for Committed Custom Template
+        id: check-custom-template
+        run: |
+          if [ -f custom_templates/web_release.zip ]; then
+            echo "has_committed=true" >> $GITHUB_OUTPUT
+            TEMPLATE_DIR=$(find ~/.local/share/godot/export_templates/ -mindepth 1 -maxdepth 1 -type d | head -n 1)
+            cp custom_templates/web_release.zip "$TEMPLATE_DIR/web_release.zip"
+            echo "Copied committed template to $TEMPLATE_DIR/web_release.zip"
+          else
+            echo "has_committed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Calculate Key Hash
+        id: get-hash
+        if: steps.check-custom-template.outputs.has_committed != 'true'
+        run: |
+          HASH=$(echo -n "${{ env.SAN_KEY }}" | sha256sum | awk '{print $1}')
+          echo "key-hash=$HASH" >> $GITHUB_OUTPUT
+
+      - name: Cache Custom Web Template
+        if: steps.check-custom-template.outputs.has_committed != 'true'
+        uses: actions/cache@v4
+        id: template-cache
+        with:
+          path: ~/.local/share/godot/export_templates/
+          key: godot-custom-web-template-v7-${{ env.GODOT_VERSION }}-${{ steps.get-hash.outputs.key-hash }}
+
+      - name: Setup Emscripten (emsdk)
+        if: steps.check-custom-template.outputs.has_committed != 'true' && steps.template-cache.outputs.cache-hit != 'true'
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 4.0.20
+
+      - name: Install SCons
+        if: steps.check-custom-template.outputs.has_committed != 'true' && steps.template-cache.outputs.cache-hit != 'true'
+        run: |
+          python3 -m pip install scons
+
+      - name: Clone Godot Source & Compile Custom Web Template
+        if: steps.check-custom-template.outputs.has_committed != 'true' && steps.template-cache.outputs.cache-hit != 'true'
+        env:
+          SCRIPT_AES256_ENCRYPTION_KEY: ${{ env.SAN_KEY }}
+        run: |
+          echo "Cloning Godot version ${{ env.GODOT_VERSION }}..."
+          if git clone --depth 1 --branch ${{ env.GODOT_VERSION }}-stable https://github.com/godotengine/godot.git; then
+            echo "Cloned stable tag successfully."
+          elif git clone --depth 1 --branch ${{ env.GODOT_VERSION }} https://github.com/godotengine/godot.git; then
+            echo "Cloned branch/tag successfully."
+          else
+            echo "Failed to clone specific version, cloning master..."
+            git clone --depth 1 https://github.com/godotengine/godot.git
+          fi
+          
+          cd godot
+          echo "Compiling templates with encryption key..."
+          scons platform=web target=template_release threads=no
+          
+          TEMPLATE_DIR=$(find ~/.local/share/godot/export_templates/ -mindepth 1 -maxdepth 1 -type d | head -n 1)
+          echo "Found template directory: $TEMPLATE_DIR"
+          cd bin
+          
+          # Overwrite all release template zips with our custom compiled zip
+          if [ -f godot.web.template_release.wasm32.nothreads.zip ]; then
+            for zip_file in "web_release.zip" "web_nothreads_release.zip" "web_dlink_release.zip" "web_dlink_nothreads_release.zip"; do
+              ZIP_PATH="$TEMPLATE_DIR/$zip_file"
+              if [ -f "$ZIP_PATH" ]; then
+                echo "Replacing $zip_file with custom compiled zip..."
+                cp -f godot.web.template_release.wasm32.nothreads.zip "$ZIP_PATH"
+              fi
+            done
+          else
+            echo "Error: Compiled template zip not found!"
+            exit 1
+          fi
+
+      - name: Commit Custom Templates to Repo
+        if: steps.check-custom-template.outputs.has_committed != 'true' && steps.template-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p custom_templates
+          TEMPLATE_DIR=$(find ~/.local/share/godot/export_templates/ -mindepth 1 -maxdepth 1 -type d | head -n 1)
+          cp "$TEMPLATE_DIR/web_release.zip" custom_templates/web_release.zip
+          cp "$TEMPLATE_DIR/web_nothreads_release.zip" custom_templates/web_nothreads_release.zip
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add custom_templates/
+          git commit -m "chore: save custom compiled web templates with encryption key" || true
+          git push origin with-images-clean || true
+
+      - name: Write export credentials config
+        run: |
+          mkdir -p .godot
+          cat <<EOF > .godot/export_credentials.cfg
+          [preset.0]
+          script_encryption_key="${{ env.SAN_KEY }}"
+          EOF
+
+      - name: Configure API URL for production
+        run: |
+          if [ -z "$API_BASE_URL" ]; then
+            echo "::error::Set repository variable API_BASE_URL (e.g. https://api.yoursite.com)"
+            exit 1
+          fi
+          case "$API_BASE_URL" in
+            https://*) ;;
+            *)
+              echo "::error::API_BASE_URL must use HTTPS in production (got: $API_BASE_URL)"
+              exit 1
+              ;;
+          esac
+          python3 <<'PY'
+          import re
+          from pathlib import Path
+          path = Path("scripts/secure/sim_constants.gd")
+          text = path.read_text()
+          api = __import__("os").environ["API_BASE_URL"].rstrip("/")
+          text = re.sub(
+              r'const API_BASE: String = "[^"]*"',
+              f'const API_BASE: String = "{api}"',
+              text,
+          )
+          text = re.sub(
+              r"const DEBUG_API: bool = \w+",
+              "const DEBUG_API: bool = false",
+              text,
+          )
+          text = re.sub(
+              r"const OFFLINE_FALLBACK: bool = \w+",
+              "const OFFLINE_FALLBACK: bool = false",
+              text,
+          )
+          build = __import__("os").environ.get("GITHUB_SHA", "dev")[:12]
+          text = re.sub(
+              r'const CLIENT_BUILD: String = "[^"]*"',
+              f'const CLIENT_BUILD: String = "{build}"',
+              text,
+          )
+          path.write_text(text)
+          PY
+
+      - name: Export Web
+        run: |
+          mkdir -p build/web
+          godot --headless --path . --export-release "${EXPORT_PRESET}" build/web/index.html
+          BUILD_ID="${GITHUB_SHA:0:12}" SIM_VERSION=10 REPO_ROOT="$PWD" python3 scripts/post_export_web.py
+          test -f build/web/index.html
+          echo "Build sizes:"
+          ls -lh build/web/index.*.pck build/web/index.*.wasm build/web/index.*.js build/web/version.json 2>/dev/null || true
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload Pages Artifact
+      - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: build/web
