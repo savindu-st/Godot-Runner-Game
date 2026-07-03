@@ -192,9 +192,3 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 
-      - name: Publish gh-pages branch (fallback for branch-based Pages source)
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./build/web
-          force_orphan: true
