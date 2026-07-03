@@ -87,13 +87,13 @@ jobs:
         id: template-cache
         with:
           path: ~/.local/share/godot/export_templates/
-          key: godot-custom-web-template-v3-${{ env.GODOT_VERSION }}-${{ steps.get-hash.outputs.key-hash }}
+          key: godot-custom-web-template-v4-${{ env.GODOT_VERSION }}-${{ steps.get-hash.outputs.key-hash }}
 
       - name: Setup Emscripten (emsdk)
         if: steps.check-custom-template.outputs.has_committed != 'true' && steps.template-cache.outputs.cache-hit != 'true'
         uses: mymindstorm/setup-emsdk@v14
         with:
-          version: 4.0.2
+          version: 4.0.20
 
       - name: Install SCons
         if: steps.check-custom-template.outputs.has_committed != 'true' && steps.template-cache.outputs.cache-hit != 'true'
