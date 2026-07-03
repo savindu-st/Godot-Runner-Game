@@ -151,6 +151,19 @@ jobs:
             fi
           done
 
+      - name: Commit Custom Templates to Repo
+        if: steps.template-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p custom_templates
+          TEMPLATE_DIR=$(find ~/.local/share/godot/export_templates/ -mindepth 1 -maxdepth 1 -type d | head -n 1)
+          cp "$TEMPLATE_DIR/web_release.zip" custom_templates/web_release.zip
+          cp "$TEMPLATE_DIR/web_nothreads_release.zip" custom_templates/web_nothreads_release.zip
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add custom_templates/
+          git commit -m "chore: save custom compiled web templates with encryption key" || true
+          git push origin with-images-clean || true
+
       - name: Write export credentials config
         run: |
           mkdir -p .godot
