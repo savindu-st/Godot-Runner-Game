@@ -16,3 +16,7 @@ key.pem
 # Mono-specific ignores
 .mono/
 data_*/
+
+# Local template compilation source folders
+emsdk/
+godot/

@@ -1,4 +1,4 @@
 {
-  "build": "safariweb",
-  "sim_version": 8
+  "build": "localdev",
+  "sim_version": 10
 }

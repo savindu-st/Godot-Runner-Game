@@ -5,7 +5,7 @@ KEY="065175ea1561a1af86c1eb25013748ff5e5b5e0107edb7a578fe32812048a7ea"
 GODOT_VERSION="4.6.3"
 
 echo "=== Installing SCons ==="
-pip3 install --user scons || sudo apt-get install -y scons || true
+pip3 install --user scons --break-system-packages || pip3 install --user scons || true
 
 echo "=== Setting up Emscripten SDK ==="
 if [ ! -d "emsdk" ]; then
