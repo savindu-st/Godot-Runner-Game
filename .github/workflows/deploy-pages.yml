@@ -123,34 +123,19 @@ jobs:
           echo "Found template directory: $TEMPLATE_DIR"
           cd bin
           
-          # Rename compiled binaries to Godot expected filenames
-          mv godot.web.template_release.wasm32.js godot.js
-          mv godot.web.template_release.wasm32.wasm godot.wasm
-          if [ -f godot.web.template_release.wasm32.audio.worklet.js ]; then
-            mv godot.web.template_release.wasm32.audio.worklet.js godot.audio.worklet.js
+          # Overwrite all release template zips with our custom compiled zip
+          if [ -f godot.web.template_release.wasm32.nothreads.zip ]; then
+            for zip_file in "web_release.zip" "web_nothreads_release.zip" "web_dlink_release.zip" "web_dlink_nothreads_release.zip"; do
+              ZIP_PATH="$TEMPLATE_DIR/$zip_file"
+              if [ -f "$ZIP_PATH" ]; then
+                echo "Replacing $zip_file with custom compiled zip..."
+                cp -f godot.web.template_release.wasm32.nothreads.zip "$ZIP_PATH"
+              fi
+            done
+          else
+            echo "Error: Compiled template zip not found!"
+            exit 1
           fi
-          if [ -f godot.web.template_release.wasm32.audio.position.worklet.js ]; then
-            mv godot.web.template_release.wasm32.audio.position.worklet.js godot.audio.position.worklet.js
-          fi
-          
-          # Update the downloaded template zips
-          for zip_file in "web_release.zip" "web_nothreads_release.zip" "web_dlink_release.zip" "web_dlink_nothreads_release.zip"; do
-            ZIP_PATH="$TEMPLATE_DIR/$zip_file"
-            if [ -f "$ZIP_PATH" ]; then
-              echo "Injecting custom encryption binaries into $zip_file..."
-              mkdir -p temp_zip
-              unzip -q -o "$ZIP_PATH" -d temp_zip
-              cp -f godot.js temp_zip/
-              cp -f godot.wasm temp_zip/
-              [ -f godot.audio.worklet.js ] && cp -f godot.audio.worklet.js temp_zip/
-              [ -f godot.audio.position.worklet.js ] && cp -f godot.audio.position.worklet.js temp_zip/
-              
-              cd temp_zip
-              zip -q -r -9 "$ZIP_PATH" *
-              cd ..
-              rm -rf temp_zip
-            fi
-          done
 
       - name: Write export credentials config
         run: |
