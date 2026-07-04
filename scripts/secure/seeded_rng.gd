@@ -10,7 +10,7 @@ func _init(seed: int) -> void:
 
 
 static func chunk_seed(segment_seed: int, chunk_index: int) -> int:
-	return hash("%d:%d" % [segment_seed, chunk_index])
+	return hash("key-%d-chunk-%d-salt" % [segment_seed, chunk_index])
 
 
 func randf() -> float:

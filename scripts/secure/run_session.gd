@@ -272,7 +272,7 @@ func _count_coins_in_payload(payload: Dictionary) -> int:
 func _random_segment_seed() -> int:
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
-	return rng.randi_range(10000, 99999)
+	return rng.randi_range(100000000, 999999999)
 
 
 func _random_id() -> String:

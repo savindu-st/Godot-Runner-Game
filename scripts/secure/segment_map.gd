@@ -99,7 +99,7 @@ static func _spawn_barrier(
 	lane_last_rock: Array,
 	object_id: int
 ) -> int:
-	var base_dist: float = chunk_start + rng.randf_range(40.0, SimConstants.CHUNK_LENGTH - 40.0)
+	var base_dist: float = chunk_start + rng.randf_range(30.0, SimConstants.CHUNK_LENGTH - 50.0)
 
 	# Full 3-lane wall — jump required.
 	for lane in 3:
@@ -130,8 +130,8 @@ static func _spawn_coin_line(
 ) -> int:
 	var lane: int = _pick_coin_lane(rng, chunk_rocks)
 	var count: int = rng.randi_range(SimConstants.COIN_COUNT_MIN, SimConstants.COIN_COUNT_MAX)
-	var max_start: float = SimConstants.CHUNK_LENGTH - float(count) * SimConstants.MIN_COIN_GAP - 12.0
-	var base_dist: float = chunk_start + rng.randf_range(12.0, maxf(14.0, max_start))
+	var max_start: float = SimConstants.CHUNK_LENGTH - float(count) * SimConstants.MIN_COIN_GAP - 15.0
+	var base_dist: float = chunk_start + rng.randf_range(15.0, maxf(17.0, max_start))
 	for j in count:
 		entries.append({
 			"kind": "coin",
