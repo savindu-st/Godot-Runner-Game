@@ -77,6 +77,7 @@ static func _try_place_rock(
 	dist: float,
 	object_id: int
 ) -> bool:
+	dist = round(dist * 512.0) / 512.0
 	if dist - lane_last_rock[lane] < SimConstants.MIN_ROCK_GAP:
 		return false
 	lane_last_rock[lane] = dist
@@ -111,10 +112,12 @@ static func _spawn_barrier(
 	var coin_lane: int = rng.randi_mod(SimConstants.NUM_LANES)
 	var coin_base: float = base_dist - float(coin_count) * SimConstants.MIN_COIN_GAP - 6.0
 	for j in coin_count:
+		var dist: float = coin_base + j * SimConstants.MIN_COIN_GAP
+		dist = round(dist * 512.0) / 512.0
 		entries.append({
 			"kind": "coin",
 			"lane": coin_lane,
-			"distance": coin_base + j * SimConstants.MIN_COIN_GAP,
+			"distance": dist,
 			"object_id": object_id,
 		})
 		object_id += 1
@@ -133,10 +136,12 @@ static func _spawn_coin_line(
 	var max_start: float = SimConstants.CHUNK_LENGTH - float(count) * SimConstants.MIN_COIN_GAP - 15.0
 	var base_dist: float = chunk_start + rng.randf_range(15.0, maxf(17.0, max_start))
 	for j in count:
+		var dist: float = base_dist + j * SimConstants.MIN_COIN_GAP
+		dist = round(dist * 512.0) / 512.0
 		entries.append({
 			"kind": "coin",
 			"lane": lane,
-			"distance": base_dist + j * SimConstants.MIN_COIN_GAP,
+			"distance": dist,
 			"object_id": object_id,
 		})
 		object_id += 1
