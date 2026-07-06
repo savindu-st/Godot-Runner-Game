@@ -613,7 +613,10 @@ func _on_run_ready(success: bool, _error_message: String) -> void:
 	if not success:
 		if _play_btn:
 			_play_btn.disabled = SimConstants.API_BASE != "" and not AuthSession.is_logged_in()
-		_show_overlay("Error", GameSettings.USER_ERROR_MSG)
+		var msg := GameSettings.USER_ERROR_MSG
+		if _error_message.contains("user_banned"):
+			msg = "Your account has been banned."
+		_show_overlay("Error", msg)
 		return
 	get_tree().change_scene_to_file("res://scenes/level.tscn")
 

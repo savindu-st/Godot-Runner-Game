@@ -282,6 +282,8 @@ func _on_api_response(path: String, success: bool, status: int, body: Dictionary
 
 func _format_auth_error(err: String, status: int) -> String:
 	match err:
+		"user_banned":
+			return "Your account has been banned."
 		"index_number_already_registered":
 			return "That index number is already registered."
 		"username_already_registered":
