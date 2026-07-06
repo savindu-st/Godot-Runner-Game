@@ -2,7 +2,7 @@ extends Node
 
 var sound_enabled: bool = true
 
-const USER_ERROR_MSG := "Something went wrong. Try again."
+const USER_ERROR_MSG := "Connection/Network Issue. Try again."
 
 
 func _ready() -> void:
