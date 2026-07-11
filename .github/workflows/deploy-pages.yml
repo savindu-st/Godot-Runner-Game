@@ -204,7 +204,7 @@ jobs:
         run: |
           mkdir -p build/web
           godot --headless --path . --export-release "${EXPORT_PRESET}" build/web/index.html
-          BUILD_ID="${GITHUB_SHA:0:12}" SIM_VERSION=10 REPO_ROOT="$PWD" python3 scripts/post_export_web.py
+          BUILD_ID="${GITHUB_SHA:0:12}" SIM_VERSION=11 REPO_ROOT="$PWD" python3 scripts/post_export_web.py
           test -f build/web/index.html
           echo "Build sizes:"
           ls -lh build/web/index.*.pck build/web/index.*.wasm build/web/index.*.js build/web/version.json 2>/dev/null || true

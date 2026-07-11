@@ -22,7 +22,7 @@ if [ -f scripts/post_export_web.py ]; then
     echo "Running post-export processing..."
     # Generate a unique build ID for local cache testing
     BUILD_ID=$(git rev-parse --short HEAD 2>/dev/null || echo "localdev")
-    WEB_DIR="$WEB_DIR" BUILD_ID="$BUILD_ID" SIM_VERSION=10 python3 scripts/post_export_web.py
+    WEB_DIR="$WEB_DIR" BUILD_ID="$BUILD_ID" SIM_VERSION=11 python3 scripts/post_export_web.py
 else
     echo "Error: scripts/post_export_web.py not found!"
     exit 1

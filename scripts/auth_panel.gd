@@ -79,8 +79,8 @@ func _build_ui() -> void:
 	_title.add_theme_font_size_override("font_size", BrowserBridge.popup_title_font())
 	_title.add_theme_color_override("font_color", Color(1, 0.88, 0.35))
 
-	_index_field = _field(box, "Index number (e.g. 201234A)", LineEdit.KEYBOARD_TYPE_DEFAULT)
-	_index_field.max_length = 7
+	_index_field = _field(box, "Index number", LineEdit.KEYBOARD_TYPE_DEFAULT)
+	_index_field.max_length = 64
 	_name_field = _field(box, "Username", LineEdit.KEYBOARD_TYPE_DEFAULT)
 
 	_status = Label.new()
@@ -165,13 +165,10 @@ func _run_submit() -> void:
 	if _busy:
 		return
 
-	var index_num := NormalizeIndexNumber(_index_field.text.strip_edges())
+	var index_num := _index_field.text.strip_edges()
 	var username := _name_field.text.strip_edges()
 	if index_num == "" or username == "":
 		_show_status("Index number and username are required.")
-		return
-	if not _is_valid_index_number(index_num):
-		_show_status("Index must start with 20–26, have 6 digits, and end with one letter (e.g. 201234A).")
 		return
 
 	_busy = true
@@ -188,31 +185,6 @@ func _run_submit() -> void:
 		ApiClient.post_unsigned("/v1/auth/login", payload)
 	else:
 		ApiClient.post_unsigned("/v1/auth/register", payload)
-
-
-func NormalizeIndexNumber(raw: String) -> String:
-	var s := raw.strip_edges()
-	if s.is_empty():
-		return s
-	return s.substr(0, s.length() - 1) + s.substr(s.length() - 1, 1).to_upper()
-
-
-func _is_valid_index_number(index_num: String) -> bool:
-	if index_num.length() != 7:
-		return false
-	var prefix := index_num.substr(0, 2)
-	if prefix != "20" and prefix != "21" and prefix != "22" and prefix != "23" and prefix != "24" and prefix != "25" and prefix != "26":
-		return false
-	for i in 2:
-		var c := index_num[2 + i]
-		if c < "0" or c > "9":
-			return false
-	for i in 2:
-		var c := index_num[4 + i]
-		if c < "0" or c > "9":
-			return false
-	var last := index_num[6]
-	return (last >= "A" and last <= "Z") or (last >= "a" and last <= "z")
 
 
 func _sync_fields_from_keyboard() -> void:

@@ -25,7 +25,7 @@ def main() -> int:
 
 	build = os.environ.get("BUILD_ID") or os.environ.get("GITHUB_SHA") or "dev"
 	build = build.strip()[:12]
-	sim_version = int(os.environ.get("SIM_VERSION", "10"))
+	sim_version = int(os.environ.get("SIM_VERSION", "11"))
 	prefix = f"index.{build}"
 
 	# Versioned copies of the large artifacts (cached long-term by URL).

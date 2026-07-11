@@ -1,6 +1,6 @@
 extends Node
 
-const SIM_VERSION: int = 10
+const SIM_VERSION: int = 11
 const CLIENT_BUILD: String = "dev"
 
 const NUM_LANES: int = 3
