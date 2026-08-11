@@ -27,7 +27,7 @@ const DISTANCE_SCORE_PER_UNIT: float = 0.0
 const LOCAL_SCORE_PER_SEC: float = 0.0
 
 # Local dev: http://localhost:8080 — GitHub Pages CI replaces this at export time.
-const API_BASE: String = "http://localhost:8080"
+const API_BASE: String = ""
 const OFFLINE_FALLBACK: bool = false
 const DEBUG_API: bool = false
 const SECURE_SPAWNS: bool = true

@@ -484,12 +484,12 @@ func _layout_hud_panels() -> void:
 func _refresh_coin_hud() -> void:
 	if coin_label:
 		coin_label.text = str(coin_count)
-	var logged_in := AuthSession.is_logged_in()
+	var show_hud := AuthSession.is_logged_in() or SimConstants.API_BASE.is_empty()
 	if _name_label:
-		_name_label.visible = logged_in
+		_name_label.visible = show_hud
 	if _best_label:
-		_best_label.visible = logged_in
-	if not logged_in:
+		_best_label.visible = show_hud
+	if not show_hud:
 		return
 	var player_name := AuthSession.username.strip_edges()
 	if player_name == "":
@@ -757,6 +757,8 @@ func _start_death() -> void:
 	await get_tree().create_timer(death_wait, true).timeout
 	if RunSession.offline_mode:
 		_finish_success = true
+		if coin_count > AuthSession.best_coins:
+			AuthSession.set_auth({"best_coins": coin_count})
 		_finish_data = {"final_coins": coin_count}
 		_show_game_over_loading()
 		_trigger_game_over()

@@ -20,10 +20,10 @@ var _validating: bool = false
 func _ready() -> void:
 	if not ApiClient.request_finished.is_connected(_on_api_response):
 		ApiClient.request_finished.connect(_on_api_response)
+	_restore_from_storage()
 	if SimConstants.API_BASE == "":
 		auth_ready.emit(false)
 		return
-	_restore_from_storage()
 	if is_logged_in():
 		_validate_token()
 	else:
@@ -54,7 +54,7 @@ func clear() -> void:
 
 
 func _persist() -> void:
-	if token == "":
+	if token == "" and not SimConstants.API_BASE.is_empty():
 		return
 	var payload := {
 		"token": token,
@@ -78,7 +78,7 @@ func _restore_from_storage() -> void:
 	var data: Dictionary = json.data
 	var saved_at := int(data.get("saved_at", 0))
 	var now := int(Time.get_unix_time_from_system())
-	if saved_at <= 0 or now - saved_at > SESSION_SECONDS:
+	if not SimConstants.API_BASE.is_empty() and (saved_at <= 0 or now - saved_at > SESSION_SECONDS):
 		clear()
 		return
 	token = str(data.get("token", ""))

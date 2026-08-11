@@ -188,10 +188,10 @@ func _layout_menu_top_bar() -> void:
 func _refresh_menu_top_bar() -> void:
 	if _menu_name_label == null:
 		return
-	var logged_in := AuthSession.is_logged_in()
-	_menu_name_label.visible = logged_in
-	_menu_best_label.visible = logged_in
-	if not logged_in:
+	var show_hud := AuthSession.is_logged_in() or SimConstants.API_BASE.is_empty()
+	_menu_name_label.visible = show_hud
+	_menu_best_label.visible = show_hud
+	if not show_hud:
 		return
 	var player_name := AuthSession.username.strip_edges()
 	if player_name == "":
@@ -342,7 +342,7 @@ var _lb_failed: bool = false
 
 func _on_leaderboard() -> void:
 	if SimConstants.API_BASE == "":
-		_show_overlay("Leaderboard", GameSettings.USER_ERROR_MSG)
+		_show_overlay("Leaderboard", "Leaderboard is not available in offline mode.")
 		return
 	_lb_top = []
 	_lb_me = {}
