@@ -19,7 +19,7 @@ var _waiting_checkpoint: bool = false
 
 
 func _ready() -> void:
-	offline_mode = SimConstants.API_BASE.is_empty()
+	offline_mode = true
 	ApiClient.request_finished.connect(_on_api_response)
 	_log("API_BASE=%s offline=%s" % [SimConstants.API_BASE, offline_mode])
 
@@ -55,25 +55,11 @@ func _clear_run_scroll_clock() -> void:
 
 
 func prepare_run() -> void:
-	if SimConstants.API_BASE.is_empty():
-		_start_offline_run("")
-		return
-	if not AuthSession.is_logged_in():
-		run_ready.emit(false, "Login required before play")
-		return
-	_reset_online_state()
-	_start_online_run()
+	_start_offline_run("")
 
 
 func restart_run() -> void:
-	if SimConstants.API_BASE.is_empty():
-		_start_offline_run("")
-		return
-	if not AuthSession.is_logged_in():
-		run_ready.emit(false, "Login required")
-		return
-	_reset_online_state()
-	_start_online_run()
+	_start_offline_run("")
 
 
 func _reset_online_state() -> void:

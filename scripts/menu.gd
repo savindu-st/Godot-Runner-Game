@@ -69,8 +69,7 @@ func _apply_responsive_scale() -> void:
 
 
 func _maybe_show_auth() -> void:
-	if SimConstants.API_BASE != "" and not AuthSession.is_logged_in():
-		_show_auth_panel()
+	pass
 
 
 func _on_auth_ready(_logged_in: bool) -> void:
@@ -189,7 +188,7 @@ func _layout_menu_top_bar() -> void:
 func _refresh_menu_top_bar() -> void:
 	if _menu_name_label == null:
 		return
-	var show_hud := AuthSession.is_logged_in() or SimConstants.API_BASE.is_empty()
+	var show_hud := true
 	_menu_name_label.visible = show_hud
 	_menu_best_label.visible = show_hud
 	if not show_hud:
@@ -198,7 +197,7 @@ func _refresh_menu_top_bar() -> void:
 	if player_name == "":
 		player_name = AuthSession.index_number.strip_edges()
 	if player_name == "":
-		player_name = "Guest" if SimConstants.API_BASE.is_empty() else "Player"
+		player_name = "Guest"
 	_menu_name_label.text = player_name
 	_menu_best_label.text = "Best %d" % AuthSession.best_coins
 
@@ -276,7 +275,7 @@ func _build_settings_panel() -> void:
 	_logout_btn.visible = false
 
 	# Local nickname option for offline mode
-	if SimConstants.API_BASE.is_empty():
+	if true:
 		var name_label := Label.new()
 		_settings_box.add_child(name_label)
 		name_label.text = "Set Guest Nickname:"
@@ -324,14 +323,14 @@ func _hide_settings() -> void:
 
 
 func _refresh_auth_ui() -> void:
-	var needs_auth := SimConstants.API_BASE != "" and not AuthSession.is_logged_in()
+	var needs_auth := false
 	if _login_btn:
-		_login_btn.visible = needs_auth
+		_login_btn.visible = false
 	if _logout_btn:
-		_logout_btn.visible = AuthSession.is_logged_in()
+		_logout_btn.visible = false
 	if _play_btn:
 		_play_btn.disabled = false
-		_play_btn.text = "LOGIN TO PLAY" if needs_auth else "PLAY"
+		_play_btn.text = "PLAY"
 	_refresh_menu_top_bar()
 
 
@@ -361,18 +360,8 @@ var _lb_failed: bool = false
 
 
 func _on_leaderboard() -> void:
-	if SimConstants.API_BASE == "":
-		_show_overlay("Leaderboard", "Leaderboard is not available in offline mode.")
-		return
-	_lb_top = []
-	_lb_me = {}
-	_lb_failed = false
-	_lb_pending = 1
-	_show_overlay("Leaderboard", "Loading...")
-	ApiClient.get_json("/v1/leaderboard")
-	if AuthSession.is_logged_in():
-		_lb_pending = 2
-		ApiClient.get_json("/v1/leaderboard/me")
+	_show_overlay("Leaderboard", "Leaderboard is not available in offline mode.")
+	return
 
 
 func _on_api_leaderboard(path: String, success: bool, _status: int, body: Dictionary) -> void:
@@ -590,9 +579,6 @@ func _on_update_required(message: String) -> void:
 
 func _on_play() -> void:
 	BrowserBridge.focus_canvas()
-	if SimConstants.API_BASE != "" and not AuthSession.is_logged_in():
-		_show_auth_panel()
-		return
 	BrowserBridge.unlock_web_audio()
 	BrowserBridge.request_fullscreen()
 	if _play_btn:

@@ -484,7 +484,7 @@ func _layout_hud_panels() -> void:
 func _refresh_coin_hud() -> void:
 	if coin_label:
 		coin_label.text = str(coin_count)
-	var show_hud := AuthSession.is_logged_in() or SimConstants.API_BASE.is_empty()
+	var show_hud := true
 	if _name_label:
 		_name_label.visible = show_hud
 	if _best_label:
@@ -495,7 +495,7 @@ func _refresh_coin_hud() -> void:
 	if player_name == "":
 		player_name = AuthSession.index_number.strip_edges()
 	if player_name == "":
-		player_name = "Guest" if SimConstants.API_BASE.is_empty() else "Player"
+		player_name = "Guest"
 	if _name_label:
 		_name_label.text = player_name
 	if _best_label:
