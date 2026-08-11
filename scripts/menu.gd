@@ -33,6 +33,7 @@ var _subtitle_label: Label
 var _menu_name_label: Label
 var _menu_best_label: Label
 var _play_wait_timer: Timer
+var _offline_name_field: LineEdit
 var _btn_font: int = 42
 var _title_font: int = 92
 
@@ -197,7 +198,7 @@ func _refresh_menu_top_bar() -> void:
 	if player_name == "":
 		player_name = AuthSession.index_number.strip_edges()
 	if player_name == "":
-		player_name = "Player"
+		player_name = "Guest" if SimConstants.API_BASE.is_empty() else "Player"
 	_menu_name_label.text = player_name
 	_menu_best_label.text = "Best %d" % AuthSession.best_coins
 
@@ -273,6 +274,25 @@ func _build_settings_panel() -> void:
 	_login_btn = _add_menu_button(_settings_box, "LOGIN / REGISTER", Color(0.22, 0.38, 0.72), _show_auth_panel)
 	_logout_btn = _add_menu_button(_settings_box, "LOGOUT", Color(0.35, 0.22, 0.22), _on_logout)
 	_logout_btn.visible = false
+
+	# Local nickname option for offline mode
+	if SimConstants.API_BASE.is_empty():
+		var name_label := Label.new()
+		_settings_box.add_child(name_label)
+		name_label.text = "Set Guest Nickname:"
+		name_label.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font())
+		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		
+		_offline_name_field = LineEdit.new()
+		_settings_box.add_child(_offline_name_field)
+		_offline_name_field.placeholder_text = "Guest Name"
+		_offline_name_field.text = AuthSession.username
+		_offline_name_field.max_length = 32
+		_offline_name_field.custom_minimum_size = Vector2(0, BrowserBridge.popup_button_height() - 8)
+		_offline_name_field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_offline_name_field.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font())
+		_offline_name_field.alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_offline_name_field.text_changed.connect(_on_offline_name_changed)
 
 	_add_menu_button(_settings_box, "WIN A TICKET", Color(0.55, 0.35, 0.12), func(): _show_overlay("Win a Ticket", WIN_TICKET_TEXT, true))
 	_add_menu_button(_settings_box, "ABOUT US", Color(0.28, 0.32, 0.42), func(): _show_overlay("About Us", ABOUT_US_TEXT, true))
@@ -637,3 +657,10 @@ func _on_quit() -> void:
 func _is_mobile() -> bool:
 	var os := OS.get_name()
 	return os == "Android" or os == "iOS" or os == "Web"
+
+
+func _on_offline_name_changed(new_text: String) -> void:
+	var clean_name = new_text.strip_edges()
+	AuthSession.set_auth({
+		"username": clean_name
+	})

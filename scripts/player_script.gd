@@ -495,7 +495,7 @@ func _refresh_coin_hud() -> void:
 	if player_name == "":
 		player_name = AuthSession.index_number.strip_edges()
 	if player_name == "":
-		player_name = "Player"
+		player_name = "Guest" if SimConstants.API_BASE.is_empty() else "Player"
 	if _name_label:
 		_name_label.text = player_name
 	if _best_label:

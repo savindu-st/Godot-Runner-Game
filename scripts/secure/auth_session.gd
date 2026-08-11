@@ -70,6 +70,8 @@ func _persist() -> void:
 func _restore_from_storage() -> void:
 	var raw := BrowserBridge.storage_get(STORAGE_KEY)
 	if raw == "":
+		if SimConstants.API_BASE.is_empty():
+			username = "Guest"
 		return
 	var json := JSON.new()
 	if json.parse(raw) != OK or not json.data is Dictionary:
