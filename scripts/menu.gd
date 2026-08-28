@@ -1,14 +1,8 @@
 extends Control
 
-const TICKET_URL: String = "https://epilogue.moraspirit.com"
 const MENU_BG: Texture2D = preload("res://assets/menu_bg.jpg")
 
-const WIN_TICKET_TEXT := (
-	"The student in first place on the leaderboard wins a ticket to the Epilogue concert.\n\n"
-	+ "We select a new winner each week until Epilogue concert day (28 July).\n\n"
-	+ "Keep playing, climb the ranks, and good luck!\n\n"
-	+ "Terms and conditions apply."
-)
+
 
 const ABOUT_US_TEXT := (
 	"We are Moraspirit — The Voice of University Sports in Sri Lanka.\n\n"
@@ -46,8 +40,6 @@ func _ready() -> void:
 	if not AuthSession.auth_ready.is_connected(_on_auth_ready):
 		AuthSession.auth_ready.connect(_on_auth_ready)
 	# Login opens via PLAY ("LOGIN TO PLAY") or Settings — not forced on load.
-	if not ApiClient.request_finished.is_connected(_on_api_leaderboard):
-		ApiClient.request_finished.connect(_on_api_leaderboard)
 	if not AuthSession.profile_updated.is_connected(_on_profile_updated):
 		AuthSession.profile_updated.connect(_on_profile_updated)
 	if not get_viewport().size_changed.is_connected(_layout_menu_top_bar):
@@ -140,8 +132,8 @@ func _build_ui() -> void:
 
 	_play_btn = _add_menu_button(btn_col, "PLAY", Color(0.16, 0.72, 0.4), _on_play)
 	_add_menu_button(btn_col, "SETTINGS", Color(0.28, 0.32, 0.42), _show_settings)
-	_add_menu_button(btn_col, "LEADERBOARD", Color(0.55, 0.35, 0.12), _on_leaderboard)
-	_add_menu_button(btn_col, "BUY A TICKET", Color(0.72, 0.48, 0.1), _on_buy_ticket)
+	if OS.get_name() != "Web":
+		_add_menu_button(btn_col, "QUIT", Color(0.45, 0.18, 0.18), _on_quit)
 
 	_build_overlay()
 	_build_settings_panel()
@@ -293,13 +285,12 @@ func _build_settings_panel() -> void:
 		_offline_name_field.alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_offline_name_field.text_changed.connect(_on_offline_name_changed)
 
-	_add_menu_button(_settings_box, "WIN A TICKET", Color(0.55, 0.35, 0.12), func(): _show_overlay("Win a Ticket", WIN_TICKET_TEXT, true))
+
 	_add_menu_button(_settings_box, "ABOUT US", Color(0.28, 0.32, 0.42), func(): _show_overlay("About Us", ABOUT_US_TEXT, true))
 	_sound_btn = _add_menu_button(_settings_box, "", Color(0.28, 0.32, 0.42), _on_toggle_sound)
 	_refresh_sound_label()
 
-	if not _is_mobile():
-		_add_menu_button(_settings_box, "QUIT", Color(0.45, 0.18, 0.18), _on_quit)
+
 
 	var close_btn := Button.new()
 	_settings_box.add_child(close_btn)
@@ -351,74 +342,6 @@ func _on_logout() -> void:
 	AuthSession.clear()
 	RunSession.run_active = false
 	_refresh_auth_ui()
-
-
-var _lb_top: Array = []
-var _lb_me: Dictionary = {}
-var _lb_pending: int = 0
-var _lb_failed: bool = false
-
-
-func _on_leaderboard() -> void:
-	_show_overlay("Leaderboard", "Leaderboard is not available in offline mode.")
-	return
-
-
-func _on_api_leaderboard(path: String, success: bool, _status: int, body: Dictionary) -> void:
-	if path == "/v1/leaderboard":
-		if success:
-			_lb_top = body.get("top", [])
-		else:
-			_lb_failed = true
-		_lb_pending -= 1
-		_try_show_leaderboard()
-	elif path == "/v1/leaderboard/me":
-		if success:
-			_lb_me = body
-			if body.has("name"):
-				AuthSession.username = str(body.get("name", AuthSession.username))
-			if body.has("best_coins"):
-				AuthSession.best_coins = int(body.get("best_coins", AuthSession.best_coins))
-			_refresh_menu_top_bar()
-		else:
-			_lb_failed = true
-		_lb_pending -= 1
-		_try_show_leaderboard()
-
-
-func _try_show_leaderboard() -> void:
-	if _lb_pending > 0:
-		return
-	if _lb_failed and _lb_top.is_empty():
-		_show_overlay("Leaderboard", GameSettings.USER_ERROR_MSG)
-		_lb_top = []
-		_lb_me = {}
-		return
-	var lines: PackedStringArray = PackedStringArray()
-	lines.append("Top 10")
-	lines.append("")
-	if _lb_top.is_empty():
-		lines.append("No scores yet.")
-	else:
-		for row in _lb_top:
-			if row is Dictionary:
-				lines.append("#%d  %s  —  %d coins" % [
-					int(row.get("rank", 0)),
-					str(row.get("name", row.get("username", "?"))),
-					int(row.get("coins", 0)),
-				])
-	if AuthSession.is_logged_in() and not _lb_me.is_empty():
-		lines.append("")
-		lines.append("Your score")
-		var rank: int = int(_lb_me.get("rank", 0))
-		var best: int = int(_lb_me.get("best_coins", _lb_me.get("coins", 0)))
-		if rank > 0:
-			lines.append("Rank #%d  ·  %d coins" % [rank, best])
-		else:
-			lines.append("No rank yet — play and collect coins!")
-	_show_overlay("Leaderboard", "\n".join(lines))
-	_lb_top = []
-	_lb_me = {}
 
 
 func _add_menu_button(parent: Control, text: String, col: Color, cb: Callable) -> Button:
@@ -625,10 +548,6 @@ func _on_run_ready(success: bool, _error_message: String) -> void:
 		_show_overlay("Error", msg)
 		return
 	get_tree().change_scene_to_file("res://scenes/level.tscn")
-
-
-func _on_buy_ticket() -> void:
-	OS.shell_open(TICKET_URL)
 
 
 func _on_toggle_sound() -> void:

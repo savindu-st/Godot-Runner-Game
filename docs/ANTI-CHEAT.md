@@ -24,20 +24,20 @@ The client never sends `"coins": 999`. It sends events like `"kind": "coin", "ob
 
 ```mermaid
 sequenceDiagram
-    participant Player
-    participant Godot
-    participant Server
+	participant Player
+	participant Godot
+	participant Server
 
-    Player->>Godot: Login (JWT)
-    Godot->>Server: POST /v1/session/start (Bearer JWT)
-    Server-->>Godot: session_id + signing_secret
-    Godot->>Server: POST /v1/run/start (HMAC signed)
-    Server-->>Godot: run_id + seed
-    Godot->>Godot: SegmentMapGen.generate(seed)
-    Player->>Godot: Play — MoveLog records events
-    Godot->>Server: POST /v1/run/finish (HMAC signed move_log)
-    Server->>Server: Generate map + Replay(events)
-    Server-->>Godot: accepted + verified coins OR rejected
+	Player->>Godot: Login (JWT)
+	Godot->>Server: POST /v1/session/start (Bearer JWT)
+	Server-->>Godot: session_id + signing_secret
+	Godot->>Server: POST /v1/run/start (HMAC signed)
+	Server-->>Godot: run_id + seed
+	Godot->>Godot: SegmentMapGen.generate(seed)
+	Player->>Godot: Play — MoveLog records events
+	Godot->>Server: POST /v1/run/finish (HMAC signed move_log)
+	Server->>Server: Generate map + Replay(events)
+	Server-->>Godot: accepted + verified coins OR rejected
 ```
 
 ---
@@ -158,9 +158,9 @@ POST /v1/session/start
 Authorization: Bearer eyJ...
 Body: {}
 → Response: {
-     "session_id": "uuid-...",
-     "signing_secret": "base64-32-random-bytes",
-     "expires_at": "..."
+	 "session_id": "uuid-...",
+	 "signing_secret": "base64-32-random-bytes",
+	 "expires_at": "..."
    }
 ```
 
