@@ -20,3 +20,6 @@ data_*/
 # Local template compilation source folders
 emsdk/
 godot/
+
+# Antigravity agents skills
+.agents/
