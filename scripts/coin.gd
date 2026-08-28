@@ -3,6 +3,7 @@ extends MeshInstance3D
 var timer: Timer = Timer.new()
 
 func _ready():
+	scale = Vector3(0.7, 0.7, 0.7)
 	timer.wait_time = 5
 	timer.autostart = true
 # warning-ignore:return_value_discarded

@@ -17,16 +17,16 @@ const NATURE_TREES: Array = [
 	"res://models/nature/tree2.glb",
 	"res://models/nature/tree3.glb",
 ]
-const NATURE_ROCKS: Array = [
+const OBSTACLE_MODELS: Array = [
 	"res://models/nature/rock1.glb",
 	"res://models/nature/rock2.glb",
 ]
 
 var tree_templates: Array = []
-var rock_templates: Array = []
+var obstacle_templates: Array = []
 
 var _last_tree: int = -1
-var _last_rock: int = -1
+var _last_obstacle: int = -1
 
 const LANE_SCROLL_SPEED: float = SimConstants.SCROLL_SPEED
 var run_distance: float = 0.0
@@ -221,7 +221,7 @@ func _clear_gameplay_spawns() -> void:
 	for n in get_tree().get_nodes_in_group("coins"):
 		if is_instance_valid(n):
 			n.queue_free()
-	for n in get_tree().get_nodes_in_group("rocks"):
+	for n in get_tree().get_nodes_in_group("obstacles"):
 		if is_instance_valid(n):
 			n.queue_free()
 
@@ -240,8 +240,8 @@ func _spawn_map_entry(entry: Dictionary) -> void:
 	match String(entry.get("kind", "")):
 		"coin":
 			_spawn_seeded_coin(entry)
-		"rock":
-			_spawn_seeded_rock(entry)
+		"rock", "obstacle":
+			_spawn_seeded_obstacle(entry)
 
 
 func _spawn_seeded_coin(entry: Dictionary) -> void:
@@ -252,25 +252,25 @@ func _spawn_seeded_coin(entry: Dictionary) -> void:
 	coin_inst.set_meta("map_distance", float(entry.distance))
 	coin_inst.global_transform.origin = Vector3(
 		road_spawnx[int(entry.lane)],
-		1.0,
+		0.4,
 		startz
 	)
 
 
-func _spawn_seeded_rock(entry: Dictionary) -> void:
-	if rock_templates.is_empty():
+func _spawn_seeded_obstacle(entry: Dictionary) -> void:
+	if obstacle_templates.is_empty():
 		return
 	var rng := SeededRng.new(int(entry.object_id) + RunSession.current_seed)
-	var idx: int = rng.randi_mod(rock_templates.size())
-	var mover := _make_mover(rock_templates[idx])
-	mover.add_to_group("rocks")
+	var idx: int = rng.randi_mod(obstacle_templates.size())
+	var mover := _make_mover(obstacle_templates[idx])
+	mover.add_to_group("obstacles")
 	mover.set_meta("object_id", int(entry.object_id))
 	mover.set_meta("spawn_lane", int(entry.lane))
 	mover.set_meta("map_distance", float(entry.distance))
 	add_child(mover)
 	mover.global_transform.origin = Vector3(road_spawnx[int(entry.lane)], 0.0, startz)
 	mover.rotation.y = rng.randf() * TAU
-	mover.scale = _rock_scale_for_template(rock_templates[idx], rng)
+	mover.scale = _obstacle_scale_for_template(obstacle_templates[idx], rng)
 
 
 func _lane_index_from_x(x: float) -> int:
@@ -700,10 +700,34 @@ func _add_concert_sign(root: Node3D, title: String, date_line: String, rot_y: fl
 
 func _load_nature() -> void:
 	_collect(NATURE_TREES, tree_templates)
-	_collect(NATURE_ROCKS, rock_templates)
+	_collect(OBSTACLE_MODELS, obstacle_templates)
+	
+	# Procedural Traffic Cone
+	var cone := MeshInstance3D.new()
+	var cone_mesh := CylinderMesh.new()
+	cone_mesh.top_radius = 0.05
+	cone_mesh.bottom_radius = 0.35
+	cone_mesh.height = 0.8
+	cone.mesh = cone_mesh
+	var cone_mat := StandardMaterial3D.new()
+	cone_mat.albedo_color = Color(1.0, 0.4, 0.0)
+	cone.material_override = cone_mat
+	cone.set_meta("height", 0.8)
+	obstacle_templates.append(cone)
+
+	# Procedural Speaker Box
+	var speaker := MeshInstance3D.new()
+	var speaker_mesh := BoxMesh.new()
+	speaker_mesh.size = Vector3(0.6, 0.9, 0.5)
+	speaker.mesh = speaker_mesh
+	var speaker_mat := StandardMaterial3D.new()
+	speaker_mat.albedo_color = Color(0.1, 0.1, 0.1)
+	speaker.material_override = speaker_mat
+	speaker.set_meta("height", 0.9)
+	obstacle_templates.append(speaker)
 
 
-func _rock_scale_for_template(tpl: MeshInstance3D, rng: SeededRng = null) -> Vector3:
+func _obstacle_scale_for_template(tpl: MeshInstance3D, rng: SeededRng = null) -> Vector3:
 	var h: float = maxf(float(tpl.get_meta("height", 1.0)), 0.01)
 	var target_h: float
 	if rng:
@@ -764,7 +788,7 @@ func _on_spawn_timer_timeout():
 		add_child(coin_inst)
 		coin_inst.global_transform.origin = Vector3(
 			road_spawnx[lane_idx],
-			1.0,
+			0.4,
 			startz + i * 2.5
 		)
 
@@ -803,27 +827,27 @@ func _on_spawn_obstacle_timer_timeout():
 	if _game_stopped():
 		return
 	spawn_obstacle_timer.wait_time = randf_range(1.6, 2.8)
-	if rock_templates.is_empty():
+	if obstacle_templates.is_empty():
 		return
 	var lanes: Array = [0, 1, 2]
 	lanes.shuffle()
 	var block_count: int = 1 + (randi() % 2)
 	for i in block_count:
-		_spawn_rock(lanes[i])
+		_spawn_obstacle(lanes[i])
 
 
-func _spawn_rock(lane_idx: int) -> void:
-	var idx: int = randi() % rock_templates.size()
-	if rock_templates.size() > 1 and idx == _last_rock:
-		idx = (idx + 1) % rock_templates.size()
-	_last_rock = idx
+func _spawn_obstacle(lane_idx: int) -> void:
+	var idx: int = randi() % obstacle_templates.size()
+	if obstacle_templates.size() > 1 and idx == _last_obstacle:
+		idx = (idx + 1) % obstacle_templates.size()
+	_last_obstacle = idx
 
-	var mover := _make_mover(rock_templates[idx])
-	mover.add_to_group("rocks")
+	var mover := _make_mover(obstacle_templates[idx])
+	mover.add_to_group("obstacles")
 	add_child(mover)
 	mover.global_transform.origin = Vector3(road_spawnx[lane_idx], 0.0, startz)
 	mover.rotation.y = randf() * TAU
-	mover.scale = _rock_scale_for_template(rock_templates[idx])
+	mover.scale = _obstacle_scale_for_template(obstacle_templates[idx])
 
 
 const HIT_Z: float = 0.9
@@ -874,7 +898,7 @@ func _physics_process(_delta: float) -> void:
 	if _game_stopped():
 		return
 	var pp: Vector3 = player.global_transform.origin
-	for r in get_tree().get_nodes_in_group("rocks"):
+	for r in get_tree().get_nodes_in_group("obstacles"):
 		if not is_instance_valid(r):
 			continue
 		var rp: Vector3 = r.global_transform.origin
@@ -884,7 +908,7 @@ func _physics_process(_delta: float) -> void:
 				var lane: int = int(r.get_meta("spawn_lane", _lane_index_from_x(rp.x)))
 				var dist: float = float(r.get_meta("map_distance", get_segment_distance()))
 				# Failed jump: jump_start is logged at takeoff; log land before crash so replay
-				# knows the player hit the rock low, not cleared it while airborne.
+				# knows the player hit the obstacle low, not cleared it while airborne.
 				if player.is_jumping:
 					MoveLog.log_jump_land(dist)
 				MoveLog.log_collision(oid, lane, dist)
