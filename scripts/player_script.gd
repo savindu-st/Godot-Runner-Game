@@ -22,12 +22,16 @@ var vertical_velocity: float = 0.0
 
 var current_lane: int = 1                  # 0 = left, 1 = center, 2 = right
 var jump_requested: bool = false
+var slide_requested: bool = false
 
 var run_anim: String = ""
 var jump_anim: String = ""
+var slide_anim: String = ""
 var death_anim: String = ""
 var dance_anim: String = ""
 var is_jumping: bool = false
+var is_sliding: bool = false
+var slide_timer: float = 0.0
 
 var game_started: bool = false
 var is_dead: bool = false
@@ -584,6 +588,7 @@ func _bind_anims() -> void:
 		return
 	run_anim = _find_anim(["running", "run"])
 	jump_anim = _find_anim(["jump"])
+	slide_anim = _find_anim(["slide", "duck", "roll"])
 	death_anim = _find_anim(["death", "fall"])
 	dance_anim = _find_anim(["danc", "dance"])
 
@@ -633,6 +638,9 @@ func _evaluate_swipe(pos: Vector2) -> void:
 		_swiped = true
 	elif d.y < -SWIPE_THRESHOLD:
 		jump_requested = true
+		_swiped = true
+	elif d.y > SWIPE_THRESHOLD:
+		slide_requested = true
 		_swiped = true
 
 func _change_lane(dir: int) -> void:
@@ -693,6 +701,8 @@ func _physics_process(delta: float) -> void:
 		_change_lane(1)
 	if Input.is_action_just_pressed("jump"):
 		jump_requested = true
+	if Input.is_action_just_pressed("ui_down"):
+		slide_requested = true
 
 	var pos: Vector3 = global_transform.origin
 
@@ -705,12 +715,32 @@ func _physics_process(delta: float) -> void:
 	if on_ground and jump_requested:
 		vertical_velocity = JUMP_FORCE
 		is_jumping = true
+		if is_sliding:
+			is_sliding = false
+			if _character_model:
+				_character_model.scale.y = 0.85
 		var level := get_tree().get_first_node_in_group("level")
 		if level and level.has_method("get_segment_distance"):
 			MoveLog.log_jump_start(level.get_segment_distance())
 		if jump_anim != "":
 			_play_anim(jump_anim, false)
 	jump_requested = false
+
+	if on_ground and not is_jumping and slide_requested and not is_sliding:
+		is_sliding = true
+		slide_timer = 0.75
+		if slide_anim != "":
+			_play_anim(slide_anim, false)
+		if _character_model:
+			_character_model.scale.y = 0.42
+
+	if is_sliding:
+		slide_timer -= delta
+		if slide_timer <= 0.0:
+			is_sliding = false
+			if _character_model:
+				_character_model.scale.y = 0.85
+	slide_requested = false
 
 	# gravity + vertical move (no floor collider, handled manually)
 	vertical_velocity -= GRAVITY * delta
