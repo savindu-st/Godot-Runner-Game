@@ -10,13 +10,13 @@ API base: configure in `scripts/secure/sim_constants.gd` → `API_BASE` (default
 
 ```
 Register or Login → AuthSession stores JWT
-       ↓
+	   ↓
 POST /v1/session/start  (Bearer JWT) → session_id + signing_secret
-       ↓
+	   ↓
 POST /v1/run/start      (HMAC signed) → run_id + seed
-       ↓
+	   ↓
 Play → POST /v1/run/checkpoint or /v1/run/finish (HMAC signed)
-       ↓
+	   ↓
 On finish: server returns final_coins, best_coins, rank
 ```
 
