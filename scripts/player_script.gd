@@ -695,13 +695,13 @@ func _physics_process(delta: float) -> void:
 		return
 
 	# keyboard fallback so it's also playable on desktop
-	if Input.is_action_just_pressed("move_left"):
+	if Input.is_action_just_pressed("move_left") or Input.is_action_just_pressed("ui_left"):
 		_change_lane(-1)
-	if Input.is_action_just_pressed("move_right"):
+	if Input.is_action_just_pressed("move_right") or Input.is_action_just_pressed("ui_right"):
 		_change_lane(1)
-	if Input.is_action_just_pressed("jump"):
+	if Input.is_action_just_pressed("jump") or Input.is_action_just_pressed("ui_up"):
 		jump_requested = true
-	if Input.is_action_just_pressed("ui_down"):
+	if Input.is_action_just_pressed("ui_down") or Input.is_action_just_pressed("slide"):
 		slide_requested = true
 
 	var pos: Vector3 = global_transform.origin
