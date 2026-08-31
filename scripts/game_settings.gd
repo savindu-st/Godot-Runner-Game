@@ -1,6 +1,8 @@
 extends Node
 
 var sound_enabled: bool = true
+var selected_character_index: int = 0
+var selected_map_index: int = 0
 
 const USER_ERROR_MSG := "Connection/Network Issue. Try again."
 
@@ -10,7 +12,24 @@ func _ready() -> void:
 		var saved := BrowserBridge.storage_get("sound_enabled")
 		if saved != "":
 			sound_enabled = saved == "1"
+		var saved_char := BrowserBridge.storage_get("selected_character_index")
+		if saved_char != "":
+			selected_character_index = int(saved_char)
+		var saved_map := BrowserBridge.storage_get("selected_map_index")
+		if saved_map != "":
+			selected_map_index = int(saved_map)
 	apply_sound()
+
+
+func set_selected_character(index: int) -> void:
+	selected_character_index = index
+	if OS.has_feature("web"):
+		BrowserBridge.storage_set("selected_character_index", str(index))
+
+func set_selected_map(index: int) -> void:
+	selected_map_index = index
+	if OS.has_feature("web"):
+		BrowserBridge.storage_set("selected_map_index", str(index))
 
 
 const MASTER_VOLUME_DB: float = 6.0

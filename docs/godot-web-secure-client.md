@@ -1,6 +1,6 @@
 # Godot Web Export — Secure Client Architecture
 
-> **Game:** Epilogue Runner (Godot 4.6, HTML5/WASM export)  
+> **Game:** Ever Dash (Godot 4.6, HTML5/WASM export)  
 > **Companion:** [godot-web-secure-server.md](./godot-web-secure-server.md)  
 > **Scope:** No login/registration yet — anonymous **session + HMAC** only.  
 > **Rule:** Client is fast; server is truth for score, seeds, and progression.
