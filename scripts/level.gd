@@ -6,21 +6,20 @@ extends Node
 @onready var spawn_obstacle_timer: Timer = $spawn_obstacle_timer
 
 @onready var coin: PackedScene = preload("res://scenes/coin.tscn")
-@onready var fence: PackedScene = preload("res://models/cartoon-assets/fence.tscn")
+@export_group("Map Assets")
+@export var map_trees: Array[PackedScene] = []
+@export var map_obstacles: Array[PackedScene] = []
+@export var fence_scene: PackedScene
+@export var road_material: Material
 
-@onready var asphalt_mat: Material = preload("res://models/road_asphalt.tres")
+@export_group("Map Settings")
+@export var map_street_names: Array[String] = []
+@export var has_special_arch: bool = false
+
+@onready var fence: PackedScene = fence_scene
+@onready var asphalt_mat: Material = road_material
 
 @onready var env_move_script = preload("res://scripts/env_script.gd")
-
-const NATURE_TREES: Array = [
-	"res://models/nature/tree1.glb",
-	"res://models/nature/tree2.glb",
-	"res://models/nature/tree3.glb",
-]
-const OBSTACLE_MODELS: Array = [
-	"res://models/nature/rock1.glb",
-	"res://models/nature/rock2.glb",
-]
 
 var tree_templates: Array = []
 var obstacle_templates: Array = []
@@ -51,10 +50,7 @@ var _road_segment_count: int = ROAD_SEGMENT_COUNT
 var road_segments: Array = []
 
 # roadside street-name boards
-var street_names: Array = [
-	"Lagaan", "Girl's Hostel", "Boat Yard", "Civil Dep", "Thunmulla",
-	"Seetha Gangula", "Sumanadasa", "Steel Building", "Basketball Court",
-]
+var street_names: Array[String] = []
 var sign_index: int = 0
 var sign_timer: Timer
 var sign_post_mat: StandardMaterial3D
@@ -99,6 +95,16 @@ func _deferred_level_boot() -> void:
 	else:
 		await get_tree().process_frame
 		await get_tree().process_frame
+	if map_street_names.size() > 0:
+		street_names = map_street_names.duplicate()
+	else:
+		street_names = ["No Name"]
+		
+	if fence == null:
+		fence = preload("res://models/cartoon-assets/fence.tscn")
+	if asphalt_mat == null:
+		asphalt_mat = preload("res://models/road_asphalt.tres")
+		
 	_setup_road_segments()
 	_setup_fences()
 	_setup_signs()
@@ -354,7 +360,7 @@ func _on_sign_timer() -> void:
 	if _game_stopped():
 		return
 	var name: String = street_names[sign_index]
-	if name == "Lagaan":
+	if name == "Lagaan" and has_special_arch:
 		_spawn_sign("Lagaan")
 		_spawn_concert_boards()
 		sign_index = (sign_index + 1) % street_names.size()
@@ -699,8 +705,24 @@ func _add_concert_sign(root: Node3D, title: String, date_line: String, rot_y: fl
 
 
 func _load_nature() -> void:
-	_collect(NATURE_TREES, tree_templates)
-	_collect(OBSTACLE_MODELS, obstacle_templates)
+	if map_trees.is_empty():
+		var NATURE_TREES: Array = [
+			"res://models/nature/tree1.glb",
+			"res://models/nature/tree2.glb",
+			"res://models/nature/tree3.glb",
+		]
+		_collect(NATURE_TREES, tree_templates)
+	else:
+		_collect_packed(map_trees, tree_templates)
+		
+	if map_obstacles.is_empty():
+		var OBSTACLE_MODELS: Array = [
+			"res://models/nature/rock1.glb",
+			"res://models/nature/rock2.glb",
+		]
+		_collect(OBSTACLE_MODELS, obstacle_templates)
+	else:
+		_collect_packed(map_obstacles, obstacle_templates)
 	
 	# Procedural Traffic Cone
 	var cone := MeshInstance3D.new()
@@ -743,6 +765,30 @@ func _collect(paths: Array, into: Array) -> void:
 		if not ResourceLoader.exists(p):
 			continue
 		var inst: Node = (load(p) as PackedScene).instantiate()
+		add_child(inst)
+		var meshes: Array = []
+		_gather_meshes(inst, meshes)
+		for m in meshes:
+			var tpl := MeshInstance3D.new()
+			tpl.mesh = m.mesh
+			for si in m.get_surface_override_material_count():
+				var om = m.get_surface_override_material(si)
+				if om:
+					tpl.set_surface_override_material(si, om)
+			var gt: Transform3D = m.global_transform
+			gt.origin = Vector3.ZERO
+			tpl.transform = gt
+			var h: float = tpl.get_aabb().size.y
+			tpl.set_meta("height", h)
+			into.append(tpl)
+		remove_child(inst)
+		inst.free()
+
+func _collect_packed(packed_scenes: Array[PackedScene], into: Array) -> void:
+	for p in packed_scenes:
+		if p == null:
+			continue
+		var inst: Node = p.instantiate()
 		add_child(inst)
 		var meshes: Array = []
 		_gather_meshes(inst, meshes)
