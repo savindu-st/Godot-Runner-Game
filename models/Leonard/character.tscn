@@ -1,0 +1,13 @@
+[gd_scene format=3 uid="uid://ba1x4dqsrd6wa"]
+
+[ext_resource type="PackedScene" uid="uid://bcgsfd0q33y8o" path="res://models/Leonard/character.fbx" id="1_2wi4v"]
+[ext_resource type="AnimationLibrary" path="res://models/Leonard/leonard_anims.tres" id="2_p6sx2"]
+
+[node name="character" unique_id=990934907 instance=ExtResource("1_2wi4v")]
+
+[node name="Skeleton3D" parent="." index="0" unique_id=1104488663]
+bones/7/rotation = Quaternion(-0.5522556, -0.43783897, 0.5667497, -0.42673844)
+bones/55/rotation = Quaternion(-0.0019207973, -0.041588597, 0.99806905, -0.04609649)
+
+[node name="AnimationPlayer" parent="." index="1" unique_id=1907892811]
+libraries/leonard_anims = ExtResource("2_p6sx2")
