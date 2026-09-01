@@ -5,7 +5,9 @@ signal character_ready
 const CHARACTER_MODELS: Array[PackedScene] = [
 	preload("res://models/anime-girl/anime-girl.glb"),
 	preload("res://models/character2/character2.glb"),
-	preload("res://models/character3/character3.glb")
+	preload("res://models/character3/character3.glb"),
+	preload("res://models/Leonard/character.tscn"),
+	preload("res://models/Remy/character.tscn")
 ]
 const COIN_SFX: AudioStream = preload("res://sounds/coinpickup.wav")
 
@@ -183,6 +185,8 @@ func _spawn_character_node() -> void:
 
 func _apply_character_transform(model: Node3D) -> void:
 	var s: float = 0.85
+	if GameSettings.selected_character_index == 4:
+		s = 0.4
 	model.transform = Transform3D(Basis(Vector3.UP, PI).scaled(Vector3(s, s, s)), Vector3.ZERO)
 
 
@@ -192,6 +196,23 @@ func _wire_animation_player() -> void:
 	anim_player = _character_model.get_node_or_null("AnimationPlayer") as AnimationPlayer
 	if anim_player == null:
 		anim_player = _character_model.find_child("AnimationPlayer", true, false) as AnimationPlayer
+	
+	if GameSettings.selected_character_index == 4 and anim_player:
+		for lib_name in anim_player.get_animation_library_list():
+			var lib = anim_player.get_animation_library(lib_name)
+			var new_lib = AnimationLibrary.new()
+			for anim_name in lib.get_animation_list():
+				var anim = lib.get_animation(anim_name).duplicate()
+				for i in range(anim.get_track_count()):
+					var path_str = String(anim.track_get_path(i))
+					if "mixamorig9_" in path_str:
+						anim.track_set_path(i, NodePath(path_str.replace("mixamorig9_", "mixamorig_")))
+					if anim.track_get_type(i) == Animation.TYPE_POSITION_3D:
+						for k in range(anim.track_get_key_count(i)):
+							anim.track_set_key_value(i, k, anim.track_get_key_value(i, k) * 2.125)
+				new_lib.add_animation(anim_name, anim)
+			anim_player.remove_animation_library(lib_name)
+			anim_player.add_animation_library(lib_name, new_lib)
 
 
 func _count_render_meshes(node: Node) -> int:
@@ -650,13 +671,13 @@ func _find_anim(keywords: Array) -> String:
 	return ""
 
 
-func _play_anim(anim_name: String, loop: bool) -> void:
+func _play_anim(anim_name: String, loop: bool, blend_time: float = 0.15) -> void:
 	if anim_name == "" or anim_player == null:
 		return
 	var anim: Animation = anim_player.get_animation(anim_name)
 	if anim:
 		anim.loop_mode = Animation.LOOP_LINEAR if loop else Animation.LOOP_NONE
-	anim_player.play(anim_name)
+	anim_player.play(anim_name, blend_time)
 
 # --- input: swipe to change lane / jump, tap to restart ---------------------
 func _unhandled_input(event: InputEvent) -> void:
@@ -750,6 +771,15 @@ func _process(delta: float) -> void:
 func shake_camera(intensity: float = 0.5) -> void:
 	shake_intensity = intensity
 
+func _transition_to_run_after_jump() -> void:
+	if anim_player and jump_anim != "" and anim_player.current_animation == jump_anim and anim_player.is_playing():
+		await anim_player.animation_finished
+	
+	if is_dead or game_over or is_jumping or is_sliding:
+		return
+		
+	_play_anim(run_anim, true)
+
 func _physics_process(delta: float) -> void:
 	if game_over:
 		return
@@ -785,8 +815,6 @@ func _physics_process(delta: float) -> void:
 		is_jumping = true
 		if is_sliding:
 			is_sliding = false
-			if _character_model:
-				_character_model.scale.y = 0.85
 		var level := get_tree().get_first_node_in_group("level")
 		if level and level.has_method("get_segment_distance"):
 			MoveLog.log_jump_start(level.get_segment_distance())
@@ -798,16 +826,16 @@ func _physics_process(delta: float) -> void:
 		is_sliding = true
 		slide_timer = 0.75
 		if slide_anim != "":
+			var a := anim_player.get_animation(slide_anim)
+			if a:
+				slide_timer = a.length
 			_play_anim(slide_anim, false)
-		if _character_model:
-			_character_model.scale.y = 0.42
 
 	if is_sliding:
 		slide_timer -= delta
 		if slide_timer <= 0.0:
 			is_sliding = false
-			if _character_model:
-				_character_model.scale.y = 0.85
+			_play_anim(run_anim, true)
 	slide_requested = false
 
 	# gravity + vertical move (no floor collider, handled manually)
@@ -821,7 +849,7 @@ func _physics_process(delta: float) -> void:
 			var level := get_tree().get_first_node_in_group("level")
 			if level and level.has_method("get_segment_distance"):
 				MoveLog.log_jump_land(level.get_segment_distance())
-			_play_anim(run_anim, true)
+			_transition_to_run_after_jump()
 
 	global_transform.origin = pos
 

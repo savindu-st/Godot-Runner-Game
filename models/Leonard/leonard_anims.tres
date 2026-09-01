@@ -1,0 +1,14 @@
+[gd_resource type="AnimationLibrary" format=3 uid="uid://qdilu8fqn7mm"]
+
+[ext_resource type="Animation" uid="uid://cdihafteqyanx" path="res://models/Leonard/running.res" id="1_run"]
+[ext_resource type="Animation" uid="uid://c8f023mm78d2y" path="res://models/Leonard/jump.res" id="2_jump"]
+[ext_resource type="Animation" uid="uid://cgnseglwburk6" path="res://models/Leonard/slide.res" id="3_slide"]
+[ext_resource type="Animation" uid="uid://bg5p1n7kmkd6j" path="res://models/Leonard/death.res" id="4_death"]
+
+[resource]
+_data = {
+&"death": ExtResource("4_death"),
+&"jump": ExtResource("2_jump"),
+&"run": ExtResource("1_run"),
+&"slide": ExtResource("3_slide")
+}

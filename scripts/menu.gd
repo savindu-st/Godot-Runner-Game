@@ -656,8 +656,8 @@ func _hide_char_selection() -> void:
 func _cycle_character(dir: int) -> void:
 	_current_char_index += dir
 	if _current_char_index < 0:
-		_current_char_index = 2
-	elif _current_char_index > 2:
+		_current_char_index = 4
+	elif _current_char_index > 4:
 		_current_char_index = 0
 	GameSettings.set_selected_character(_current_char_index)
 	_refresh_char_preview()
@@ -669,6 +669,10 @@ func _refresh_char_preview() -> void:
 		_char_name_label.text = "Crimson Runner"
 	elif _current_char_index == 2:
 		_char_name_label.text = "Azure Sprinter"
+	elif _current_char_index == 3:
+		_char_name_label.text = "Leonard"
+	elif _current_char_index == 4:
+		_char_name_label.text = "Remy"
 
 	if _char_model_instance:
 		_char_model_instance.queue_free()
@@ -677,12 +681,16 @@ func _refresh_char_preview() -> void:
 	var models = [
 		preload("res://models/anime-girl/anime-girl.glb"),
 		preload("res://models/character2/character2.glb"),
-		preload("res://models/character3/character3.glb")
+		preload("res://models/character3/character3.glb"),
+		preload("res://models/Leonard/character.tscn"),
+		preload("res://models/Remy/character.tscn")
 	]
 	
 	_char_model_instance = models[_current_char_index].instantiate()
 	
 	var scale_val = 0.85
+	if _current_char_index == 4:
+		scale_val = 0.4
 	_char_model_instance.transform = Transform3D(Basis(Vector3.UP, PI).scaled(Vector3(scale_val, scale_val, scale_val)), Vector3.ZERO)
 	_char_3d_root.add_child(_char_model_instance)
 	
@@ -690,6 +698,23 @@ func _refresh_char_preview() -> void:
 	if anim_player == null:
 		anim_player = _char_model_instance.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if anim_player:
+		if _current_char_index == 4:
+			for lib_name in anim_player.get_animation_library_list():
+				var lib = anim_player.get_animation_library(lib_name)
+				var new_lib = AnimationLibrary.new()
+				for anim_name in lib.get_animation_list():
+					var anim = lib.get_animation(anim_name).duplicate()
+					for i in range(anim.get_track_count()):
+						var path_str = String(anim.track_get_path(i))
+						if "mixamorig9_" in path_str:
+							anim.track_set_path(i, NodePath(path_str.replace("mixamorig9_", "mixamorig_")))
+						if anim.track_get_type(i) == Animation.TYPE_POSITION_3D:
+							for k in range(anim.track_get_key_count(i)):
+								anim.track_set_key_value(i, k, anim.track_get_key_value(i, k) * 2.125)
+					new_lib.add_animation(anim_name, anim)
+				anim_player.remove_animation_library(lib_name)
+				anim_player.add_animation_library(lib_name, new_lib)
+		
 		var target_anim = ""
 		for anim_name in anim_player.get_animation_list():
 			var lower = String(anim_name).to_lower()
