@@ -186,10 +186,11 @@ func _layout_menu_top_bar() -> void:
 	var top := 18.0
 	var height := 44.0
 	var side_w := 220.0
+	var best_side_w := 350.0
 	_menu_name_label.position = Vector2(18.0, top)
 	_menu_name_label.size = Vector2(side_w, height)
-	_menu_best_label.position = Vector2(width - side_w - 18.0, top)
-	_menu_best_label.size = Vector2(side_w, height)
+	_menu_best_label.position = Vector2(width - best_side_w - 24.0, top)
+	_menu_best_label.size = Vector2(best_side_w, height)
 
 
 func _refresh_menu_top_bar() -> void:
@@ -215,12 +216,16 @@ func _menu_hud_label(align: HorizontalAlignment, color: Color) -> Label:
 	label.z_index = 20
 	label.horizontal_alignment = align
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.clip_text = true
-	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	label.clip_text = false
+	label.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
 	label.add_theme_font_size_override("font_size", BrowserBridge.hud_font())
 	label.add_theme_color_override("font_color", color)
-	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
-	label.add_theme_constant_override("outline_size", 5)
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+	label.add_theme_constant_override("outline_size", 10)
+	label.add_theme_color_override("font_shadow_color", color * Color(1, 1, 1, 0.6))
+	label.add_theme_constant_override("shadow_offset_x", 0)
+	label.add_theme_constant_override("shadow_offset_y", 4)
+	label.add_theme_constant_override("shadow_outline_size", 16)
 	return label
 
 
@@ -977,3 +982,33 @@ func _on_offline_name_changed(new_text: String) -> void:
 	AuthSession.set_auth({
 		"username": clean_name
 	})
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel"):
+		if _settings_panel and _settings_panel.visible:
+			_hide_settings()
+		elif _char_overlay and _char_overlay.visible:
+			_hide_char_selection()
+		elif _map_overlay and _map_overlay.visible:
+			_hide_map_selection()
+		elif _overlay and _overlay.visible:
+			_hide_overlay()
+		elif _auth_panel and _auth_panel.visible:
+			if _auth_panel.has_method("close"):
+				_auth_panel.close()
+			else:
+				_auth_panel.visible = false
+			_refresh_auth_ui()
+	elif event.is_action_pressed("ui_accept"):
+		if _settings_panel and _settings_panel.visible:
+			pass
+		elif _char_overlay and _char_overlay.visible:
+			_hide_char_selection()
+		elif _map_overlay and _map_overlay.visible:
+			_hide_map_selection()
+		elif _overlay and _overlay.visible:
+			_hide_overlay()
+		else:
+			if _play_btn and not _play_btn.disabled and _play_btn.visible:
+				_on_play()

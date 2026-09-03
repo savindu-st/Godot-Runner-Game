@@ -9,12 +9,16 @@ extends Node
 @export_group("Map Assets")
 @export var map_trees: Array[PackedScene] = []
 @export var map_obstacles: Array[PackedScene] = []
+@export var map_glb_obstacles: Array[String] = []
+@export var map_glb_trees: Array[String] = []
 @export var fence_scene: PackedScene
 @export var road_material: Material
 
 @export_group("Map Settings")
 @export var map_street_names: Array[String] = []
 @export var has_special_arch: bool = false
+@export var bgm_override: AudioStream
+@export var dense_environment: bool = false
 
 @onready var fence: PackedScene = fence_scene
 @onready var asphalt_mat: Material = road_material
@@ -48,6 +52,9 @@ const ROAD_SEGMENT_LEN: float = 5.0
 const ROAD_SEGMENT_COUNT: int = 28
 var _road_segment_count: int = ROAD_SEGMENT_COUNT
 var road_segments: Array = []
+
+var _last_left_building_dist: float = 0.0
+var _last_right_building_dist: float = 0.0
 
 # roadside street-name boards
 var street_names: Array[String] = []
@@ -113,6 +120,14 @@ func _deferred_level_boot() -> void:
 	for _i in 3:
 		await get_tree().process_frame
 	_load_nature()
+	
+	if dense_environment:
+		var z: float = startz
+		while z < 30.0:
+			_spawn_dense_prop(-1, z)
+			_spawn_dense_prop(1, z)
+			z += 12.0
+			
 	spawn_env_timer.start()
 
 
@@ -130,7 +145,10 @@ func _setup_fences() -> void:
 func _setup_bgm() -> void:
 	_bgm_player = AudioStreamPlayer.new()
 	_bgm_player.name = "BackgroundMusic"
-	_bgm_player.stream = BGM
+	if bgm_override:
+		_bgm_player.stream = bgm_override
+	else:
+		_bgm_player.stream = BGM
 	_bgm_player.volume_db = -2.0
 	_bgm_player.add_to_group("web_audio")
 	BrowserBridge.configure_audio_player(_bgm_player, true)
@@ -275,7 +293,13 @@ func _spawn_seeded_obstacle(entry: Dictionary) -> void:
 	mover.set_meta("map_distance", float(entry.distance))
 	add_child(mover)
 	mover.global_transform.origin = Vector3(road_spawnx[int(entry.lane)], 0.0, startz)
-	mover.rotation.y = rng.randf() * TAU
+	if mover.has_meta("slide_clear"):
+		mover.rotation.y = mover.get_meta("y_rot", PI)
+	elif mover.has_meta("is_car"):
+		var base_rot: float = PI / 2.0 if rng.randf() > 0.5 else -PI / 2.0
+		mover.rotation.y = base_rot + rng.randf_range(-0.25, 0.25)
+	else:
+		mover.rotation.y = rng.randf() * TAU
 	mover.scale = _obstacle_scale_for_template(obstacle_templates[idx], rng)
 
 
@@ -714,6 +738,8 @@ func _load_nature() -> void:
 		_collect(NATURE_TREES, tree_templates)
 	else:
 		_collect_packed(map_trees, tree_templates)
+		for glb_path in map_glb_trees:
+			_collect_glb(glb_path, tree_templates)
 		
 	if map_obstacles.is_empty():
 		var OBSTACLE_MODELS: Array = [
@@ -723,39 +749,26 @@ func _load_nature() -> void:
 		_collect(OBSTACLE_MODELS, obstacle_templates)
 	else:
 		_collect_packed(map_obstacles, obstacle_templates)
+		for glb_path in map_glb_obstacles:
+			_collect_glb(glb_path, obstacle_templates)
 	
-	# Procedural Traffic Cone
-	var cone := MeshInstance3D.new()
-	var cone_mesh := CylinderMesh.new()
-	cone_mesh.top_radius = 0.05
-	cone_mesh.bottom_radius = 0.35
-	cone_mesh.height = 0.8
-	cone.mesh = cone_mesh
-	var cone_mat := StandardMaterial3D.new()
-	cone_mat.albedo_color = Color(1.0, 0.4, 0.0)
-	cone.material_override = cone_mat
-	cone.set_meta("height", 0.8)
-	obstacle_templates.append(cone)
-
-	# Procedural Speaker Box
-	var speaker := MeshInstance3D.new()
-	var speaker_mesh := BoxMesh.new()
-	speaker_mesh.size = Vector3(0.6, 0.9, 0.5)
-	speaker.mesh = speaker_mesh
-	var speaker_mat := StandardMaterial3D.new()
-	speaker_mat.albedo_color = Color(0.1, 0.1, 0.1)
-	speaker.material_override = speaker_mat
-	speaker.set_meta("height", 0.9)
-	obstacle_templates.append(speaker)
 
 
-func _obstacle_scale_for_template(tpl: MeshInstance3D, rng: SeededRng = null) -> Vector3:
+
+func _obstacle_scale_for_template(tpl: Node3D, rng: SeededRng = null) -> Vector3:
 	var h: float = maxf(float(tpl.get_meta("height", 1.0)), 0.01)
 	var target_h: float
-	if rng:
-		target_h = rng.randf_range(0.82, 1.05)
+	if tpl.has_meta("target_height"):
+		target_h = tpl.get_meta("target_height")
+		if rng:
+			target_h *= rng.randf_range(0.9, 1.1)
+		else:
+			target_h *= randf_range(0.9, 1.1)
 	else:
-		target_h = randf_range(0.82, 1.05)
+		if rng:
+			target_h = rng.randf_range(0.82, 1.05)
+		else:
+			target_h = randf_range(0.82, 1.05)
 	var s: float = target_h / h
 	return Vector3(s, s, s)
 
@@ -788,25 +801,164 @@ func _collect_packed(packed_scenes: Array[PackedScene], into: Array) -> void:
 	for p in packed_scenes:
 		if p == null:
 			continue
-		var inst: Node = p.instantiate()
-		add_child(inst)
+		var inst: Node3D = p.instantiate() as Node3D
+		if inst == null:
+			continue
 		var meshes: Array = []
 		_gather_meshes(inst, meshes)
+		var max_y: float = 0.01
 		for m in meshes:
-			var tpl := MeshInstance3D.new()
-			tpl.mesh = m.mesh
-			for si in m.get_surface_override_material_count():
-				var om = m.get_surface_override_material(si)
-				if om:
-					tpl.set_surface_override_material(si, om)
-			var gt: Transform3D = m.global_transform
-			gt.origin = Vector3.ZERO
-			tpl.transform = gt
-			var h: float = tpl.get_aabb().size.y
-			tpl.set_meta("height", h)
-			into.append(tpl)
-		remove_child(inst)
-		inst.free()
+			if m is MeshInstance3D:
+				var aabb = m.get_aabb()
+				var top_y = m.transform.origin.y + aabb.position.y + aabb.size.y
+				if top_y > max_y:
+					max_y = top_y
+		inst.set_meta("height", max_y)
+		into.append(inst)
+
+func _collect_glb(path: String, into: Array) -> void:
+	if not ResourceLoader.exists(path):
+		return
+	var packed_scene = load(path) as PackedScene
+	if not packed_scene:
+		return
+	var root = packed_scene.instantiate()
+	add_child(root)
+	
+	var queue = [root]
+	var found_cars = []
+	var keywords = ["pickup", "sedan", "police", "stationwagon", "car"]
+	
+	while queue.size() > 0:
+		var curr = queue.pop_front()
+		var n = curr.name.to_lower()
+		var is_car = false
+		for k in keywords:
+			if k in n and not ("root" in n) and not ("sketchfab" in n) and not ("scene" in n):
+				is_car = true
+				break
+		if is_car:
+			found_cars.append(curr)
+		else:
+			for c in curr.get_children():
+				queue.append(c)
+				
+	if found_cars.is_empty():
+		var target = root
+		while target.get_child_count() == 1 and not (target.get_child(0) is MeshInstance3D):
+			target = target.get_child(0)
+		for c in target.get_children():
+			found_cars.append(c)
+
+	for car in found_cars:
+		var inst = Node3D.new()
+		inst.name = car.name
+		
+		var meshes: Array = []
+		_gather_meshes(car, meshes)
+		
+		var fix_transform = Transform3D()
+		var n_lower = car.name.to_lower()
+		var p_lower = path.to_lower()
+		var is_billboard = false
+		
+		if "solo_billboard" in p_lower or "solo_billboard" in n_lower:
+			fix_transform = fix_transform.rotated(Vector3(1, 0, 0), -PI / 2.0)
+			is_billboard = true
+		elif "billboard" in p_lower or "billboard" in n_lower:
+			fix_transform = fix_transform.rotated(Vector3(1, 0, 0), PI)
+			is_billboard = true
+		elif "pickup" in n_lower or "sedan" in n_lower or "police" in n_lower or "stationwagon" in n_lower or "car" in p_lower:
+			inst.set_meta("is_car", true)
+
+		var filtered_meshes = []
+		for m in meshes:
+			if not (m is MeshInstance3D) or not m.mesh:
+				continue
+			var m_name = m.name.to_lower()
+			if "col" in m_name or "bound" in m_name or "shadow" in m_name:
+				continue
+			if abs(m.global_transform.basis.determinant()) < 0.0001:
+				continue
+			filtered_meshes.append(m)
+		meshes = filtered_meshes
+		
+		var is_flat_plane = false
+		var valid_bounds = false
+		var min_x = 9999.0
+		var max_x = -9999.0
+		var min_y = 9999.0
+		var max_y = -9999.0
+		var min_z = 9999.0
+		var max_z = -9999.0
+		
+		for m in meshes:
+			if m is MeshInstance3D:
+				var aabb = m.get_aabb()
+				var gtrans = fix_transform
+				if not is_billboard:
+					gtrans = gtrans * m.global_transform
+				for i in range(8):
+					var corner = aabb.position
+					if i & 1: corner.x += aabb.size.x
+					if i & 2: corner.y += aabb.size.y
+					if i & 4: corner.z += aabb.size.z
+					var p = gtrans * corner
+					min_x = min(min_x, p.x)
+					max_x = max(max_x, p.x)
+					min_y = min(min_y, p.y)
+					max_y = max(max_y, p.y)
+					min_z = min(min_z, p.z)
+					max_z = max(max_z, p.z)
+				valid_bounds = true
+				
+		if valid_bounds:
+			var size_y = max_y - min_y
+			if size_y < 0.2:
+				is_flat_plane = true
+		
+		if is_flat_plane or not valid_bounds:
+			continue
+			
+		# Create clean MeshInstance3D copies to avoid GLTF tree dependency bugs
+		for m in meshes:
+			if m is MeshInstance3D and m.mesh:
+				var clean_mi = MeshInstance3D.new()
+				clean_mi.mesh = m.mesh
+				for si in m.mesh.get_surface_count():
+					var mat = m.get_surface_override_material(si)
+					if mat == null:
+						mat = m.mesh.surface_get_material(si)
+				if is_billboard:
+					clean_mi.transform = fix_transform
+				else:
+					clean_mi.transform = fix_transform * m.global_transform
+				inst.add_child(clean_mi)
+			
+		inst.set_meta("height", max_y - min_y)
+		inst.set_meta("size_x", max_x - min_x)
+		inst.set_meta("size_z", max_z - min_z)
+		
+		if "billboard" in path.to_lower() or "billboard" in inst.name.to_lower():
+			inst.set_meta("slide_clear", true)
+			inst.set_meta("target_height", 2.2)
+			if "solo_billboard" in path.to_lower() or "solo_billboard" in inst.name.to_lower():
+				inst.set_meta("y_rot", PI)
+			else:
+				inst.set_meta("y_rot", PI)
+		else:
+			inst.set_meta("target_height", 1.28)
+		
+		var center_x = (min_x + max_x) * 0.5
+		var center_z = (min_z + max_z) * 0.5
+		
+		# Offset all children to center the obstacle and rest on the ground
+		for child in inst.get_children():
+			child.transform.origin += Vector3(-center_x, -min_y, -center_z)
+			
+		into.append(inst)
+	remove_child(root)
+	root.free()
 
 
 func _gather_meshes(n: Node, into: Array) -> void:
@@ -816,10 +968,12 @@ func _gather_meshes(n: Node, into: Array) -> void:
 		_gather_meshes(c, into)
 
 
-func _make_mover(template: MeshInstance3D) -> Node3D:
+func _make_mover(template: Node3D) -> Node3D:
 	var mover := Node3D.new()
 	mover.set_script(env_move_script)
 	mover.add_child(template.duplicate())
+	for m in template.get_meta_list():
+		mover.set_meta(m, template.get_meta(m))
 	return mover
 
 
@@ -841,6 +995,8 @@ func _on_spawn_timer_timeout():
 
 func _on_spawn_env_timer_timeout():
 	if _game_stopped():
+		return
+	if dense_environment:
 		return
 	var side: int = 1 if randf() < 0.5 else -1
 	_spawn_tree(side)
@@ -868,6 +1024,42 @@ func _spawn_tree(dir: int) -> void:
 	mover.rotation.y = randf() * TAU
 	mover.scale = Vector3(s, s, s)
 
+func _spawn_dense_prop(side: int, z_pos: float) -> void:
+	if tree_templates.is_empty():
+		return
+	var idx: int = randi() % tree_templates.size()
+	if tree_templates.size() > 1 and idx == _last_tree:
+		idx = (idx + 1) % tree_templates.size()
+	_last_tree = idx
+
+	var mover := _make_mover(tree_templates[idx])
+	add_child(mover)
+	
+	var is_building = "building" in tree_templates[idx].name.to_lower()
+	var base_scale = 0.4 if is_building else 1.0
+	
+	if is_building:
+		# Front is along Z. To face road (+X from left, -X from right):
+		mover.rotation.y = -PI / 2.0 if side == -1 else PI / 2.0
+	else:
+		mover.rotation.y = PI / 2.0 if side == -1 else -PI / 2.0
+		
+	# Since they are all rotated by 90 degrees (either PI/2 or -PI/2), the width towards the road is size_z
+	var w = mover.get_meta("size_z", 8.0)
+	if not is_building and mover.get_meta("size_z", -1.0) == -1.0:
+		w = 2.0 # Default for packed scenes like streetlamps
+		
+	w *= base_scale
+		
+	var road_edge = 7.5 # Pushed further out
+	var offset_x = road_edge + (w * 0.5)
+	
+	# Space them out to the edges
+	mover.global_transform.origin = Vector3(side * offset_x, 0.0, z_pos)
+		
+	var s: float = base_scale * randf_range(0.95, 1.05)
+	mover.scale = Vector3(s, s, s)
+
 
 func _on_spawn_obstacle_timer_timeout():
 	if _game_stopped():
@@ -892,7 +1084,13 @@ func _spawn_obstacle(lane_idx: int) -> void:
 	mover.add_to_group("obstacles")
 	add_child(mover)
 	mover.global_transform.origin = Vector3(road_spawnx[lane_idx], 0.0, startz)
-	mover.rotation.y = randf() * TAU
+	if mover.has_meta("slide_clear"):
+		mover.rotation.y = mover.get_meta("y_rot", PI)
+	elif mover.has_meta("is_car"):
+		var base_rot: float = PI / 2.0 if randf() > 0.5 else -PI / 2.0
+		mover.rotation.y = base_rot + randf_range(-0.25, 0.25)
+	else:
+		mover.rotation.y = randf() * TAU
 	mover.scale = _obstacle_scale_for_template(obstacle_templates[idx])
 
 
@@ -908,6 +1106,15 @@ func _process(delta: float) -> void:
 	run_distance += speed * delta
 	_scroll_road_segments(delta, speed)
 	_scroll_fences(delta, speed)
+	
+	if dense_environment:
+		if run_distance > _last_left_building_dist + 12.0:
+			_spawn_dense_prop(-1, startz)
+			_last_left_building_dist = run_distance
+		if run_distance > _last_right_building_dist + 12.0:
+			_spawn_dense_prop(1, startz)
+			_last_right_building_dist = run_distance
+			
 	if SimConstants.SECURE_SPAWNS:
 		_process_secure_spawns()
 		_try_segment_checkpoint()
@@ -948,7 +1155,15 @@ func _physics_process(_delta: float) -> void:
 		if not is_instance_valid(r):
 			continue
 		var rp: Vector3 = r.global_transform.origin
-		if abs(rp.z - pp.z) < HIT_Z and abs(rp.x - pp.x) < HIT_X and pp.y < JUMP_CLEAR_Y:
+		if abs(rp.z - pp.z) < HIT_Z and abs(rp.x - pp.x) < HIT_X:
+			var is_overhead := r.has_meta("slide_clear")
+			if is_overhead:
+				if player.is_sliding:
+					continue
+			else:
+				if pp.y >= JUMP_CLEAR_Y:
+					continue
+
 			if SimConstants.SECURE_SPAWNS:
 				var oid: int = int(r.get_meta("object_id", -1))
 				var lane: int = int(r.get_meta("spawn_lane", _lane_index_from_x(rp.x)))

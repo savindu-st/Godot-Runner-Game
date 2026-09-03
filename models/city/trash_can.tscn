@@ -1,0 +1,17 @@
+[gd_scene format=3]
+
+[sub_resource type="StandardMaterial3D" id="1"]
+albedo_color = Color(0.2, 0.2, 0.2, 1)
+roughness = 0.8
+
+[sub_resource type="CylinderMesh" id="2"]
+top_radius = 0.3
+bottom_radius = 0.25
+height = 0.8
+
+[node name="TrashCan" type="Node3D"]
+
+[node name="Body" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4, 0)
+mesh = SubResource("2")
+surface_material_override/0 = SubResource("1")
