@@ -108,9 +108,9 @@ func _deferred_level_boot() -> void:
 		street_names = ["No Name"]
 		
 	if fence == null:
-		fence = preload("res://models/cartoon-assets/fence.tscn")
+		fence = preload("res://models/city/barrier_fence.tscn")
 	if asphalt_mat == null:
-		asphalt_mat = preload("res://models/road_asphalt.tres")
+		asphalt_mat = preload("res://models/road_city.tres")
 		
 	_setup_road_segments()
 	_setup_fences()
@@ -731,9 +731,7 @@ func _add_concert_sign(root: Node3D, title: String, date_line: String, rot_y: fl
 func _load_nature() -> void:
 	if map_trees.is_empty():
 		var NATURE_TREES: Array = [
-			"res://models/nature/tree1.glb",
-			"res://models/nature/tree2.glb",
-			"res://models/nature/tree3.glb",
+			"res://models/city/streetlamp.tscn",
 		]
 		_collect(NATURE_TREES, tree_templates)
 	else:
@@ -743,8 +741,9 @@ func _load_nature() -> void:
 		
 	if map_obstacles.is_empty():
 		var OBSTACLE_MODELS: Array = [
-			"res://models/nature/rock1.glb",
-			"res://models/nature/rock2.glb",
+			"res://models/city/trash_can.tscn",
+			"res://models/city/fire_hydrant.tscn",
+			"res://models/city/jersey_barrier.tscn",
 		]
 		_collect(OBSTACLE_MODELS, obstacle_templates)
 	else:

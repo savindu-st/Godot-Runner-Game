@@ -3,9 +3,6 @@ extends CharacterBody3D
 signal character_ready
 
 const CHARACTER_MODELS: Array[PackedScene] = [
-	preload("res://models/anime-girl/anime-girl.glb"),
-	preload("res://models/character2/character2.glb"),
-	preload("res://models/character3/character3.glb"),
 	preload("res://models/Leonard/character.tscn"),
 	preload("res://models/Remy/character.tscn")
 ]
@@ -140,10 +137,6 @@ func _ensure_character() -> void:
 		_apply_character_transform(_character_model)
 
 	var tint := Color.WHITE
-	if GameSettings.selected_character_index == 1:
-		tint = Color(1.0, 0.4, 0.4)
-	elif GameSettings.selected_character_index == 2:
-		tint = Color(0.4, 0.6, 1.0)
 
 	for _attempt in 8:
 		if _character_model == null:
@@ -188,7 +181,7 @@ func _spawn_character_node() -> void:
 
 func _apply_character_transform(model: Node3D) -> void:
 	var s: float = 0.85
-	if GameSettings.selected_character_index == 4:
+	if GameSettings.selected_character_index == 1:
 		s = 0.4
 	model.transform = Transform3D(Basis(Vector3.UP, PI).scaled(Vector3(s, s, s)), Vector3.ZERO)
 
@@ -200,7 +193,7 @@ func _wire_animation_player() -> void:
 	if anim_player == null:
 		anim_player = _character_model.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	
-	if GameSettings.selected_character_index == 4 and anim_player:
+	if GameSettings.selected_character_index == 1 and anim_player:
 		for lib_name in anim_player.get_animation_library_list():
 			var lib = anim_player.get_animation_library(lib_name)
 			var new_lib = AnimationLibrary.new()

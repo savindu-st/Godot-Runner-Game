@@ -33,15 +33,6 @@ var _char_3d_root: Node3D
 var _char_model_instance: Node3D
 var _current_char_index: int = 0
 
-var _maps_btn: Button
-var _map_overlay: PanelContainer
-var _map_overlay_dim: ColorRect
-var _map_name_label: Label
-var _map_viewport_container: SubViewportContainer
-var _map_viewport: SubViewport
-var _map_3d_root: Node3D
-var _map_model_instance: Node3D
-var _current_map_index: int = 0
 var _menu_name_label: Label
 var _menu_best_label: Label
 var _play_wait_timer: Timer
@@ -143,7 +134,6 @@ func _build_ui() -> void:
 
 	_play_btn = _add_menu_button(btn_col, "PLAY", Color(0.16, 0.72, 0.4), _on_play)
 	_characters_btn = _add_menu_button(btn_col, "CHARACTERS", Color(0.2, 0.5, 0.75), _show_char_selection)
-	_maps_btn = _add_menu_button(btn_col, "MAPS", Color(0.7, 0.3, 0.6), _show_map_selection)
 	_add_menu_button(btn_col, "SETTINGS", Color(0.28, 0.32, 0.42), _show_settings)
 	if OS.get_name() != "Web":
 		_add_menu_button(btn_col, "QUIT", Color(0.45, 0.18, 0.18), _on_quit)
@@ -151,7 +141,6 @@ func _build_ui() -> void:
 	_build_overlay()
 	_build_settings_panel()
 	_build_char_selection()
-	_build_map_selection()
 
 	var auth_layer := CanvasLayer.new()
 	auth_layer.name = "AuthLayer"
@@ -637,6 +626,9 @@ func _build_char_selection() -> void:
 
 func _show_char_selection() -> void:
 	_current_char_index = GameSettings.selected_character_index
+	if _current_char_index < 0 or _current_char_index >= 2:
+		_current_char_index = 0
+		GameSettings.set_selected_character(0)
 	_refresh_char_preview()
 	_char_overlay_dim.modulate.a = 0
 	_char_overlay.modulate.a = 0
@@ -661,22 +653,16 @@ func _hide_char_selection() -> void:
 func _cycle_character(dir: int) -> void:
 	_current_char_index += dir
 	if _current_char_index < 0:
-		_current_char_index = 4
-	elif _current_char_index > 4:
+		_current_char_index = 1
+	elif _current_char_index > 1:
 		_current_char_index = 0
 	GameSettings.set_selected_character(_current_char_index)
 	_refresh_char_preview()
 
 func _refresh_char_preview() -> void:
 	if _current_char_index == 0:
-		_char_name_label.text = "Anime Girl"
-	elif _current_char_index == 1:
-		_char_name_label.text = "Crimson Runner"
-	elif _current_char_index == 2:
-		_char_name_label.text = "Azure Sprinter"
-	elif _current_char_index == 3:
 		_char_name_label.text = "Leonard"
-	elif _current_char_index == 4:
+	elif _current_char_index == 1:
 		_char_name_label.text = "Remy"
 
 	if _char_model_instance:
@@ -684,9 +670,6 @@ func _refresh_char_preview() -> void:
 		_char_model_instance = null
 	
 	var models = [
-		preload("res://models/anime-girl/anime-girl.glb"),
-		preload("res://models/character2/character2.glb"),
-		preload("res://models/character3/character3.glb"),
 		preload("res://models/Leonard/character.tscn"),
 		preload("res://models/Remy/character.tscn")
 	]
@@ -694,7 +677,7 @@ func _refresh_char_preview() -> void:
 	_char_model_instance = models[_current_char_index].instantiate()
 	
 	var scale_val = 0.85
-	if _current_char_index == 4:
+	if _current_char_index == 1:
 		scale_val = 0.4
 	_char_model_instance.transform = Transform3D(Basis(Vector3.UP, PI).scaled(Vector3(scale_val, scale_val, scale_val)), Vector3.ZERO)
 	_char_3d_root.add_child(_char_model_instance)
@@ -703,7 +686,7 @@ func _refresh_char_preview() -> void:
 	if anim_player == null:
 		anim_player = _char_model_instance.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if anim_player:
-		if _current_char_index == 4:
+		if _current_char_index == 1:
 			for lib_name in anim_player.get_animation_library_list():
 				var lib = anim_player.get_animation_library(lib_name)
 				var new_lib = AnimationLibrary.new()
@@ -737,133 +720,7 @@ func _refresh_char_preview() -> void:
 				anim.loop_mode = Animation.LOOP_LINEAR
 			anim_player.play(target_anim)
 	
-	var tint := Color.WHITE
-	if _current_char_index == 1:
-		tint = Color(1.0, 0.4, 0.4)
-	elif _current_char_index == 2:
-		tint = Color(0.4, 0.6, 1.0)
-	
-	_matte_meshes(_char_model_instance, tint)
-
-
-func _build_map_selection() -> void:
-	_map_overlay_dim = ColorRect.new()
-	_map_overlay_dim.name = "MapOverlayDim"
-	add_child(_map_overlay_dim)
-	_map_overlay_dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_map_overlay_dim.color = Color(0, 0, 0, 0.62)
-	_map_overlay_dim.visible = false
-	_map_overlay_dim.mouse_filter = Control.MOUSE_FILTER_STOP
-	_map_overlay_dim.gui_input.connect(func(e: InputEvent):
-		if e is InputEventScreenTouch and e.pressed:
-			_hide_map_selection()
-		elif e is InputEventMouseButton and e.pressed:
-			_hide_map_selection()
-	)
-	
-	_map_overlay = PanelContainer.new()
-	_map_overlay.name = "MapOverlayPanel"
-	add_child(_map_overlay)
-	_map_overlay.visible = false
-	BrowserBridge.apply_wide_popup(_map_overlay, 0.75)
-	_map_overlay.add_theme_stylebox_override("panel", _overlay_style())
-	
-	var margin = MarginContainer.new()
-	_map_overlay.add_child(margin)
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 20)
-	margin.add_theme_constant_override("margin_right", 20)
-	margin.add_theme_constant_override("margin_top", 20)
-	margin.add_theme_constant_override("margin_bottom", 20)
-	
-	var main_box = VBoxContainer.new()
-	margin.add_child(main_box)
-	main_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	main_box.add_theme_constant_override("separation", 24)
-	
-	var title_label = Label.new()
-	main_box.add_child(title_label)
-	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title_label.text = "SELECT MAP"
-	title_label.add_theme_font_size_override("font_size", BrowserBridge.popup_title_font())
-	title_label.add_theme_color_override("font_color", Color(0.4, 0.8, 1.0))
-	
-	var middle_row = HBoxContainer.new()
-	main_box.add_child(middle_row)
-	middle_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	middle_row.custom_minimum_size = Vector2(0, 150)
-	middle_row.add_theme_constant_override("separation", 16)
-	
-	var left_btn = Button.new()
-	middle_row.add_child(left_btn)
-	left_btn.text = "<"
-	left_btn.custom_minimum_size = Vector2(60, 60)
-	left_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_title_font())
-	left_btn.add_theme_stylebox_override("normal", _pill(Color(0.28, 0.32, 0.42)))
-	left_btn.pressed.connect(func(): _cycle_map(-1))
-	
-	_map_name_label = Label.new()
-	middle_row.add_child(_map_name_label)
-	_map_name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_map_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_map_name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_map_name_label.add_theme_font_size_override("font_size", BrowserBridge.popup_title_font() + 10)
-	_map_name_label.add_theme_color_override("font_color", Color(1, 0.9, 0.45))
-	
-	var right_btn = Button.new()
-	middle_row.add_child(right_btn)
-	right_btn.text = ">"
-	right_btn.custom_minimum_size = Vector2(60, 60)
-	right_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_title_font())
-	right_btn.add_theme_stylebox_override("normal", _pill(Color(0.28, 0.32, 0.42)))
-	right_btn.pressed.connect(func(): _cycle_map(1))
-	
-	var select_btn = Button.new()
-	main_box.add_child(select_btn)
-	select_btn.custom_minimum_size = Vector2(0, BrowserBridge.popup_button_height())
-	select_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	select_btn.text = "CONFIRM"
-	select_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font())
-	select_btn.add_theme_stylebox_override("normal", _pill(Color(0.16, 0.72, 0.4)))
-	select_btn.pressed.connect(_hide_map_selection)
-
-func _show_map_selection() -> void:
-	_current_map_index = GameSettings.selected_map_index
-	_refresh_map_preview()
-	_map_overlay_dim.modulate.a = 0
-	_map_overlay.modulate.a = 0
-	_map_overlay.position.y = 50
-	_map_overlay.visible = true
-	_map_overlay_dim.visible = true
-	var t = create_tween().set_parallel(true)
-	t.tween_property(_map_overlay_dim, "modulate:a", 1.0, 0.2)
-	t.tween_property(_map_overlay, "modulate:a", 1.0, 0.2)
-	t.tween_property(_map_overlay, "position:y", 0.0, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-
-func _hide_map_selection() -> void:
-	var t = create_tween().set_parallel(true)
-	t.tween_property(_map_overlay_dim, "modulate:a", 0.0, 0.15)
-	t.tween_property(_map_overlay, "modulate:a", 0.0, 0.15)
-	t.tween_property(_map_overlay, "position:y", 50.0, 0.15).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	t.chain().tween_callback(func():
-		_map_overlay.visible = false
-		_map_overlay_dim.visible = false
-	)
-
-func _cycle_map(dir: int) -> void:
-	_current_map_index += dir
-	if _current_map_index < 0:
-		_current_map_index = 1
-	elif _current_map_index > 1:
-		_current_map_index = 0
-	GameSettings.set_selected_map(_current_map_index)
-	_refresh_map_preview()
-
-func _refresh_map_preview() -> void:
-	if _current_map_index == 0:
-		_map_name_label.text = "Campus"
-	elif _current_map_index == 1:
-		_map_name_label.text = "City"
+	_matte_meshes(_char_model_instance, Color.WHITE)
 
 
 func _matte_meshes(node: Node, tint: Color = Color.WHITE) -> void:
@@ -957,10 +814,7 @@ func _on_run_ready(success: bool, _error_message: String) -> void:
 			msg = "Your account has been banned."
 		_show_overlay("Error", msg)
 		return
-	if GameSettings.selected_map_index == 1:
-		get_tree().change_scene_to_file("res://scenes/level_city.tscn")
-	else:
-		get_tree().change_scene_to_file("res://scenes/level.tscn")
+	get_tree().change_scene_to_file("res://scenes/level_city.tscn")
 
 
 func _on_toggle_sound() -> void:
@@ -990,8 +844,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			_hide_settings()
 		elif _char_overlay and _char_overlay.visible:
 			_hide_char_selection()
-		elif _map_overlay and _map_overlay.visible:
-			_hide_map_selection()
 		elif _overlay and _overlay.visible:
 			_hide_overlay()
 		elif _auth_panel and _auth_panel.visible:
@@ -1005,8 +857,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			pass
 		elif _char_overlay and _char_overlay.visible:
 			_hide_char_selection()
-		elif _map_overlay and _map_overlay.visible:
-			_hide_map_selection()
 		elif _overlay and _overlay.visible:
 			_hide_overlay()
 		else:
