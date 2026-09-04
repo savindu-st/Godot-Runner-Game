@@ -23,7 +23,25 @@ var _auth_panel: Control
 var _login_btn: Button
 var _logout_btn: Button
 var _title_label: Label
-var _subtitle_label: Label
+var _characters_btn: Button
+var _char_overlay: PanelContainer
+var _char_overlay_dim: ColorRect
+var _char_name_label: Label
+var _char_viewport_container: SubViewportContainer
+var _char_viewport: SubViewport
+var _char_3d_root: Node3D
+var _char_model_instance: Node3D
+var _current_char_index: int = 0
+
+var _maps_btn: Button
+var _map_overlay: PanelContainer
+var _map_overlay_dim: ColorRect
+var _map_name_label: Label
+var _map_viewport_container: SubViewportContainer
+var _map_viewport: SubViewport
+var _map_3d_root: Node3D
+var _map_model_instance: Node3D
+var _current_map_index: int = 0
 var _menu_name_label: Label
 var _menu_best_label: Label
 var _play_wait_timer: Timer
@@ -104,24 +122,17 @@ func _build_ui() -> void:
 	root.add_child(_title_label)
 	_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title_label.add_theme_font_size_override("font_size", _title_font)
-	_title_label.add_theme_color_override("font_color", Color(1, 0.86, 0.32))
+	_title_label.add_theme_color_override("font_color", Color(1, 0.86, 0.32)) # Neon yellow
 	_title_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.55))
 	_title_label.add_theme_constant_override("outline_size", 10)
-	_title_label.text = "EPILOGUE"
-
-	_subtitle_label = Label.new()
-	root.add_child(_subtitle_label)
-	_subtitle_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_subtitle_label.add_theme_font_size_override("font_size", BrowserBridge.menu_subtitle_font())
-	_subtitle_label.add_theme_color_override("font_color", Color(0.82, 0.9, 1.0))
-	_subtitle_label.text = "Runner"
-
-	var tag := Label.new()
-	root.add_child(tag)
-	tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	tag.add_theme_font_size_override("font_size", BrowserBridge.menu_caption_font())
-	tag.add_theme_color_override("font_color", Color(0.72, 0.78, 0.92, 0.85))
-	tag.text = "28 July Concert"
+	_title_label.text = "EVER DASH"
+	
+	_title_label.resized.connect(func():
+		_title_label.pivot_offset = _title_label.size / 2.0
+	)
+	var title_tween = create_tween().set_loops()
+	title_tween.tween_property(_title_label, "scale", Vector2(1.05, 1.05), 1.2).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	title_tween.tween_property(_title_label, "scale", Vector2(1.0, 1.0), 1.2).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 	root.add_child(_spacer(8))
 
@@ -131,12 +142,16 @@ func _build_ui() -> void:
 	btn_col.add_theme_constant_override("separation", 14 if BrowserBridge.is_mobile_viewport() else 16)
 
 	_play_btn = _add_menu_button(btn_col, "PLAY", Color(0.16, 0.72, 0.4), _on_play)
+	_characters_btn = _add_menu_button(btn_col, "CHARACTERS", Color(0.2, 0.5, 0.75), _show_char_selection)
+	_maps_btn = _add_menu_button(btn_col, "MAPS", Color(0.7, 0.3, 0.6), _show_map_selection)
 	_add_menu_button(btn_col, "SETTINGS", Color(0.28, 0.32, 0.42), _show_settings)
 	if OS.get_name() != "Web":
 		_add_menu_button(btn_col, "QUIT", Color(0.45, 0.18, 0.18), _on_quit)
 
 	_build_overlay()
 	_build_settings_panel()
+	_build_char_selection()
+	_build_map_selection()
 
 	var auth_layer := CanvasLayer.new()
 	auth_layer.name = "AuthLayer"
@@ -304,13 +319,27 @@ func _build_settings_panel() -> void:
 
 func _show_settings() -> void:
 	_refresh_auth_ui()
+	var dim = get_node("SettingsDim")
+	dim.modulate.a = 0
+	_settings_panel.modulate.a = 0
+	_settings_panel.position.y = 50
 	_settings_panel.visible = true
-	get_node("SettingsDim").visible = true
-
+	dim.visible = true
+	var t = create_tween().set_parallel(true)
+	t.tween_property(dim, "modulate:a", 1.0, 0.2)
+	t.tween_property(_settings_panel, "modulate:a", 1.0, 0.2)
+	t.tween_property(_settings_panel, "position:y", 0.0, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 func _hide_settings() -> void:
-	_settings_panel.visible = false
-	get_node("SettingsDim").visible = false
+	var dim = get_node("SettingsDim")
+	var t = create_tween().set_parallel(true)
+	t.tween_property(dim, "modulate:a", 0.0, 0.15)
+	t.tween_property(_settings_panel, "modulate:a", 0.0, 0.15)
+	t.tween_property(_settings_panel, "position:y", 50.0, 0.15).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	t.chain().tween_callback(func():
+		_settings_panel.visible = false
+		dim.visible = false
+	)
 
 
 func _refresh_auth_ui() -> void:
@@ -353,8 +382,29 @@ func _add_menu_button(parent: Control, text: String, col: Color, cb: Callable) -
 	btn.add_theme_font_size_override("font_size", _btn_font)
 	btn.text = text
 	btn.add_theme_stylebox_override("normal", _pill(col))
-	btn.add_theme_stylebox_override("hover", _pill(col.lightened(0.08)))
-	btn.add_theme_stylebox_override("pressed", _pill(col.darkened(0.08)))
+	btn.add_theme_stylebox_override("hover", _pill(col.lightened(0.2)))
+	btn.add_theme_stylebox_override("pressed", _pill(col.darkened(0.2)))
+	
+	btn.pivot_offset = btn.size / 2.0
+	btn.resized.connect(func(): btn.pivot_offset = btn.size / 2.0)
+	
+	btn.mouse_entered.connect(func():
+		var t = create_tween()
+		t.tween_property(btn, "scale", Vector2(1.05, 1.05), 0.1).set_trans(Tween.TRANS_QUAD)
+	)
+	btn.mouse_exited.connect(func():
+		var t = create_tween()
+		t.tween_property(btn, "scale", Vector2(1.0, 1.0), 0.15).set_trans(Tween.TRANS_QUAD)
+	)
+	btn.button_down.connect(func():
+		var t = create_tween()
+		t.tween_property(btn, "scale", Vector2(0.95, 0.95), 0.05).set_trans(Tween.TRANS_QUAD)
+	)
+	btn.button_up.connect(func():
+		var t = create_tween()
+		t.tween_property(btn, "scale", Vector2(1.0, 1.0), 0.1).set_trans(Tween.TRANS_QUAD)
+	)
+	
 	btn.pressed.connect(cb)
 	return btn
 
@@ -367,12 +417,14 @@ func _spacer(h: int) -> Control:
 
 func _pill(c: Color) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = c
+	sb.bg_color = Color(0.05, 0.05, 0.08, 0.8) # Neo dark transparent
 	sb.set_corner_radius_all(22)
 	sb.content_margin_top = 18
 	sb.content_margin_bottom = 18
-	sb.shadow_size = 4
-	sb.shadow_color = Color(0, 0, 0, 0.35)
+	sb.set_border_width_all(2)
+	sb.border_color = c # Neon accent
+	sb.shadow_size = 8
+	sb.shadow_color = c * Color(1, 1, 1, 0.25)
 	return sb
 
 
@@ -445,10 +497,12 @@ func _build_overlay() -> void:
 
 func _overlay_style() -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.09, 0.11, 0.17, 0.98)
+	sb.bg_color = Color(0.04, 0.03, 0.08, 0.9)
 	sb.set_corner_radius_all(20)
 	sb.set_border_width_all(2)
-	sb.border_color = Color(1, 0.85, 0.3, 0.45)
+	sb.border_color = Color(0.4, 0.1, 0.8, 0.8)
+	sb.shadow_size = 15
+	sb.shadow_color = Color(0.4, 0.1, 0.8, 0.3)
 	sb.content_margin_left = 8
 	sb.content_margin_right = 8
 	sb.content_margin_top = 8
@@ -480,6 +534,357 @@ func _hide_overlay() -> void:
 	if _overlay_back_to_settings:
 		_overlay_back_to_settings = false
 		_show_settings()
+
+
+func _build_char_selection() -> void:
+	_char_overlay_dim = ColorRect.new()
+	_char_overlay_dim.name = "CharOverlayDim"
+	add_child(_char_overlay_dim)
+	_char_overlay_dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_char_overlay_dim.color = Color(0, 0, 0, 0.62)
+	_char_overlay_dim.visible = false
+	_char_overlay_dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_char_overlay_dim.gui_input.connect(func(e: InputEvent):
+		if e is InputEventScreenTouch and e.pressed:
+			_hide_char_selection()
+		elif e is InputEventMouseButton and e.pressed:
+			_hide_char_selection()
+	)
+	
+	_char_overlay = PanelContainer.new()
+	_char_overlay.name = "CharOverlayPanel"
+	add_child(_char_overlay)
+	_char_overlay.visible = false
+	BrowserBridge.apply_wide_popup(_char_overlay, 0.85)
+	_char_overlay.add_theme_stylebox_override("panel", _overlay_style())
+	
+	var margin = MarginContainer.new()
+	_char_overlay.add_child(margin)
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 20)
+	margin.add_theme_constant_override("margin_right", 20)
+	margin.add_theme_constant_override("margin_top", 20)
+	margin.add_theme_constant_override("margin_bottom", 20)
+	
+	var main_box = VBoxContainer.new()
+	margin.add_child(main_box)
+	main_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	main_box.add_theme_constant_override("separation", 24)
+	
+	_char_name_label = Label.new()
+	main_box.add_child(_char_name_label)
+	_char_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_char_name_label.add_theme_font_size_override("font_size", BrowserBridge.popup_title_font() + 4)
+	_char_name_label.add_theme_color_override("font_color", Color(1, 0.9, 0.45))
+	
+	var middle_row = HBoxContainer.new()
+	main_box.add_child(middle_row)
+	middle_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	middle_row.custom_minimum_size = Vector2(0, 300)
+	middle_row.add_theme_constant_override("separation", 16)
+	
+	var left_btn = Button.new()
+	middle_row.add_child(left_btn)
+	left_btn.text = "<"
+	left_btn.custom_minimum_size = Vector2(60, 60)
+	left_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_title_font())
+	left_btn.add_theme_stylebox_override("normal", _pill(Color(0.28, 0.32, 0.42)))
+	left_btn.pressed.connect(func(): _cycle_character(-1))
+	
+	_char_viewport_container = SubViewportContainer.new()
+	middle_row.add_child(_char_viewport_container)
+	_char_viewport_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_char_viewport_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_char_viewport_container.stretch = true
+	
+	_char_viewport = SubViewport.new()
+	_char_viewport_container.add_child(_char_viewport)
+	_char_viewport.transparent_bg = true
+	_char_viewport.own_world_3d = true
+	
+	_char_3d_root = Node3D.new()
+	_char_viewport.add_child(_char_3d_root)
+	
+	var cam = Camera3D.new()
+	_char_3d_root.add_child(cam)
+	cam.transform.origin = Vector3(0, 1.0, 2.5)
+	
+	var light = DirectionalLight3D.new()
+	_char_3d_root.add_child(light)
+	light.transform.basis = Basis().rotated(Vector3.RIGHT, -PI/4).rotated(Vector3.UP, PI/4)
+	
+	var right_btn = Button.new()
+	middle_row.add_child(right_btn)
+	right_btn.text = ">"
+	right_btn.custom_minimum_size = Vector2(60, 60)
+	right_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_title_font())
+	right_btn.add_theme_stylebox_override("normal", _pill(Color(0.28, 0.32, 0.42)))
+	right_btn.pressed.connect(func(): _cycle_character(1))
+	
+	var select_btn = Button.new()
+	main_box.add_child(select_btn)
+	select_btn.custom_minimum_size = Vector2(0, BrowserBridge.popup_button_height())
+	select_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	select_btn.text = "SELECT CHARACTER"
+	select_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font())
+	select_btn.add_theme_stylebox_override("normal", _pill(Color(0.16, 0.72, 0.4)))
+	select_btn.pressed.connect(_hide_char_selection)
+
+func _show_char_selection() -> void:
+	_current_char_index = GameSettings.selected_character_index
+	_refresh_char_preview()
+	_char_overlay_dim.modulate.a = 0
+	_char_overlay.modulate.a = 0
+	_char_overlay.position.y = 50
+	_char_overlay.visible = true
+	_char_overlay_dim.visible = true
+	var t = create_tween().set_parallel(true)
+	t.tween_property(_char_overlay_dim, "modulate:a", 1.0, 0.2)
+	t.tween_property(_char_overlay, "modulate:a", 1.0, 0.2)
+	t.tween_property(_char_overlay, "position:y", 0.0, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+func _hide_char_selection() -> void:
+	var t = create_tween().set_parallel(true)
+	t.tween_property(_char_overlay_dim, "modulate:a", 0.0, 0.15)
+	t.tween_property(_char_overlay, "modulate:a", 0.0, 0.15)
+	t.tween_property(_char_overlay, "position:y", 50.0, 0.15).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	t.chain().tween_callback(func():
+		_char_overlay.visible = false
+		_char_overlay_dim.visible = false
+	)
+
+func _cycle_character(dir: int) -> void:
+	_current_char_index += dir
+	if _current_char_index < 0:
+		_current_char_index = 4
+	elif _current_char_index > 4:
+		_current_char_index = 0
+	GameSettings.set_selected_character(_current_char_index)
+	_refresh_char_preview()
+
+func _refresh_char_preview() -> void:
+	if _current_char_index == 0:
+		_char_name_label.text = "Anime Girl"
+	elif _current_char_index == 1:
+		_char_name_label.text = "Crimson Runner"
+	elif _current_char_index == 2:
+		_char_name_label.text = "Azure Sprinter"
+	elif _current_char_index == 3:
+		_char_name_label.text = "Leonard"
+	elif _current_char_index == 4:
+		_char_name_label.text = "Remy"
+
+	if _char_model_instance:
+		_char_model_instance.queue_free()
+		_char_model_instance = null
+	
+	var models = [
+		preload("res://models/anime-girl/anime-girl.glb"),
+		preload("res://models/character2/character2.glb"),
+		preload("res://models/character3/character3.glb"),
+		preload("res://models/Leonard/character.tscn"),
+		preload("res://models/Remy/character.tscn")
+	]
+	
+	_char_model_instance = models[_current_char_index].instantiate()
+	
+	var scale_val = 0.85
+	if _current_char_index == 4:
+		scale_val = 0.4
+	_char_model_instance.transform = Transform3D(Basis(Vector3.UP, PI).scaled(Vector3(scale_val, scale_val, scale_val)), Vector3.ZERO)
+	_char_3d_root.add_child(_char_model_instance)
+	
+	var anim_player = _char_model_instance.get_node_or_null("AnimationPlayer") as AnimationPlayer
+	if anim_player == null:
+		anim_player = _char_model_instance.find_child("AnimationPlayer", true, false) as AnimationPlayer
+	if anim_player:
+		if _current_char_index == 4:
+			for lib_name in anim_player.get_animation_library_list():
+				var lib = anim_player.get_animation_library(lib_name)
+				var new_lib = AnimationLibrary.new()
+				for anim_name in lib.get_animation_list():
+					var anim = lib.get_animation(anim_name).duplicate()
+					for i in range(anim.get_track_count()):
+						var path_str = String(anim.track_get_path(i))
+						if "mixamorig9_" in path_str:
+							anim.track_set_path(i, NodePath(path_str.replace("mixamorig9_", "mixamorig_")))
+						if anim.track_get_type(i) == Animation.TYPE_POSITION_3D:
+							for k in range(anim.track_get_key_count(i)):
+								anim.track_set_key_value(i, k, anim.track_get_key_value(i, k) * 2.125)
+					new_lib.add_animation(anim_name, anim)
+				anim_player.remove_animation_library(lib_name)
+				anim_player.add_animation_library(lib_name, new_lib)
+		
+		var target_anim = ""
+		for anim_name in anim_player.get_animation_list():
+			var lower = String(anim_name).to_lower()
+			if "danc" in lower or "idle" in lower:
+				target_anim = anim_name
+				break
+		if target_anim == "":
+			for anim_name in anim_player.get_animation_list():
+				if "run" in String(anim_name).to_lower():
+					target_anim = anim_name
+					break
+		if target_anim != "":
+			var anim = anim_player.get_animation(target_anim)
+			if anim:
+				anim.loop_mode = Animation.LOOP_LINEAR
+			anim_player.play(target_anim)
+	
+	var tint := Color.WHITE
+	if _current_char_index == 1:
+		tint = Color(1.0, 0.4, 0.4)
+	elif _current_char_index == 2:
+		tint = Color(0.4, 0.6, 1.0)
+	
+	_matte_meshes(_char_model_instance, tint)
+
+
+func _build_map_selection() -> void:
+	_map_overlay_dim = ColorRect.new()
+	_map_overlay_dim.name = "MapOverlayDim"
+	add_child(_map_overlay_dim)
+	_map_overlay_dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_map_overlay_dim.color = Color(0, 0, 0, 0.62)
+	_map_overlay_dim.visible = false
+	_map_overlay_dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_map_overlay_dim.gui_input.connect(func(e: InputEvent):
+		if e is InputEventScreenTouch and e.pressed:
+			_hide_map_selection()
+		elif e is InputEventMouseButton and e.pressed:
+			_hide_map_selection()
+	)
+	
+	_map_overlay = PanelContainer.new()
+	_map_overlay.name = "MapOverlayPanel"
+	add_child(_map_overlay)
+	_map_overlay.visible = false
+	BrowserBridge.apply_wide_popup(_map_overlay, 0.75)
+	_map_overlay.add_theme_stylebox_override("panel", _overlay_style())
+	
+	var margin = MarginContainer.new()
+	_map_overlay.add_child(margin)
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 20)
+	margin.add_theme_constant_override("margin_right", 20)
+	margin.add_theme_constant_override("margin_top", 20)
+	margin.add_theme_constant_override("margin_bottom", 20)
+	
+	var main_box = VBoxContainer.new()
+	margin.add_child(main_box)
+	main_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	main_box.add_theme_constant_override("separation", 24)
+	
+	var title_label = Label.new()
+	main_box.add_child(title_label)
+	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title_label.text = "SELECT MAP"
+	title_label.add_theme_font_size_override("font_size", BrowserBridge.popup_title_font())
+	title_label.add_theme_color_override("font_color", Color(0.4, 0.8, 1.0))
+	
+	var middle_row = HBoxContainer.new()
+	main_box.add_child(middle_row)
+	middle_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	middle_row.custom_minimum_size = Vector2(0, 150)
+	middle_row.add_theme_constant_override("separation", 16)
+	
+	var left_btn = Button.new()
+	middle_row.add_child(left_btn)
+	left_btn.text = "<"
+	left_btn.custom_minimum_size = Vector2(60, 60)
+	left_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_title_font())
+	left_btn.add_theme_stylebox_override("normal", _pill(Color(0.28, 0.32, 0.42)))
+	left_btn.pressed.connect(func(): _cycle_map(-1))
+	
+	_map_name_label = Label.new()
+	middle_row.add_child(_map_name_label)
+	_map_name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_map_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_map_name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_map_name_label.add_theme_font_size_override("font_size", BrowserBridge.popup_title_font() + 10)
+	_map_name_label.add_theme_color_override("font_color", Color(1, 0.9, 0.45))
+	
+	var right_btn = Button.new()
+	middle_row.add_child(right_btn)
+	right_btn.text = ">"
+	right_btn.custom_minimum_size = Vector2(60, 60)
+	right_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_title_font())
+	right_btn.add_theme_stylebox_override("normal", _pill(Color(0.28, 0.32, 0.42)))
+	right_btn.pressed.connect(func(): _cycle_map(1))
+	
+	var select_btn = Button.new()
+	main_box.add_child(select_btn)
+	select_btn.custom_minimum_size = Vector2(0, BrowserBridge.popup_button_height())
+	select_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	select_btn.text = "CONFIRM"
+	select_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font())
+	select_btn.add_theme_stylebox_override("normal", _pill(Color(0.16, 0.72, 0.4)))
+	select_btn.pressed.connect(_hide_map_selection)
+
+func _show_map_selection() -> void:
+	_current_map_index = GameSettings.selected_map_index
+	_refresh_map_preview()
+	_map_overlay_dim.modulate.a = 0
+	_map_overlay.modulate.a = 0
+	_map_overlay.position.y = 50
+	_map_overlay.visible = true
+	_map_overlay_dim.visible = true
+	var t = create_tween().set_parallel(true)
+	t.tween_property(_map_overlay_dim, "modulate:a", 1.0, 0.2)
+	t.tween_property(_map_overlay, "modulate:a", 1.0, 0.2)
+	t.tween_property(_map_overlay, "position:y", 0.0, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+func _hide_map_selection() -> void:
+	var t = create_tween().set_parallel(true)
+	t.tween_property(_map_overlay_dim, "modulate:a", 0.0, 0.15)
+	t.tween_property(_map_overlay, "modulate:a", 0.0, 0.15)
+	t.tween_property(_map_overlay, "position:y", 50.0, 0.15).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	t.chain().tween_callback(func():
+		_map_overlay.visible = false
+		_map_overlay_dim.visible = false
+	)
+
+func _cycle_map(dir: int) -> void:
+	_current_map_index += dir
+	if _current_map_index < 0:
+		_current_map_index = 1
+	elif _current_map_index > 1:
+		_current_map_index = 0
+	GameSettings.set_selected_map(_current_map_index)
+	_refresh_map_preview()
+
+func _refresh_map_preview() -> void:
+	if _current_map_index == 0:
+		_map_name_label.text = "Campus"
+	elif _current_map_index == 1:
+		_map_name_label.text = "City"
+
+
+func _matte_meshes(node: Node, tint: Color = Color.WHITE) -> void:
+	if node is MeshInstance3D:
+		var mi := node as MeshInstance3D
+		if mi.mesh:
+			for si in mi.mesh.get_surface_count():
+				var mat: Material = mi.get_surface_override_material(si)
+				if mat == null:
+					mat = mi.mesh.surface_get_material(si)
+				if mat == null:
+					continue
+				var flat := mat.duplicate()
+				if flat is StandardMaterial3D:
+					var sm := flat as StandardMaterial3D
+					sm.roughness = 1.0
+					sm.metallic = 0.0
+					sm.metallic_specular = 0.0
+					sm.roughness_texture = null
+					sm.metallic_texture = null
+					sm.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+					if tint != Color.WHITE:
+						sm.albedo_color = tint
+				mi.set_surface_override_material(si, flat)
+	for child in node.get_children():
+		_matte_meshes(child, tint)
 
 
 func _refresh_sound_label() -> void:
@@ -547,7 +952,10 @@ func _on_run_ready(success: bool, _error_message: String) -> void:
 			msg = "Your account has been banned."
 		_show_overlay("Error", msg)
 		return
-	get_tree().change_scene_to_file("res://scenes/level.tscn")
+	if GameSettings.selected_map_index == 1:
+		get_tree().change_scene_to_file("res://scenes/level_city.tscn")
+	else:
+		get_tree().change_scene_to_file("res://scenes/level.tscn")
 
 
 func _on_toggle_sound() -> void:

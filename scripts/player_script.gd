@@ -2,11 +2,20 @@ extends CharacterBody3D
 
 signal character_ready
 
-const PLAYER_MODEL: PackedScene = preload("res://models/anime-girl/anime-girl.glb")
+const CHARACTER_MODELS: Array[PackedScene] = [
+	preload("res://models/anime-girl/anime-girl.glb"),
+	preload("res://models/character2/character2.glb"),
+	preload("res://models/character3/character3.glb"),
+	preload("res://models/Leonard/character.tscn"),
+	preload("res://models/Remy/character.tscn")
+]
 const COIN_SFX: AudioStream = preload("res://sounds/coinpickup.wav")
 
 @onready var audio_player: AudioStreamPlayer = $CoinSFX
 @onready var death_audio: AudioStreamPlayer = $DeathSFX
+@onready var camera: Camera3D = $Camera3D
+
+var shake_intensity: float = 0.0
 var anim_player: AnimationPlayer
 
 const JUMP_FORCE: float = 9.0
@@ -127,12 +136,18 @@ func _ensure_character() -> void:
 	else:
 		_apply_character_transform(_character_model)
 
+	var tint := Color.WHITE
+	if GameSettings.selected_character_index == 1:
+		tint = Color(1.0, 0.4, 0.4)
+	elif GameSettings.selected_character_index == 2:
+		tint = Color(0.4, 0.6, 1.0)
+
 	for _attempt in 8:
 		if _character_model == null:
 			_spawn_character_node()
 		if _count_render_meshes(_character_model) > 0:
 			_wire_animation_player()
-			_matte_meshes(_character_model)
+			_matte_meshes(_character_model, tint)
 			_character_model.visible = true
 			_mark_character_ready()
 			return
@@ -144,7 +159,7 @@ func _ensure_character() -> void:
 		await get_tree().process_frame
 	_spawn_character_node()
 	_wire_animation_player()
-	_matte_meshes(_character_model)
+	_matte_meshes(_character_model, tint)
 	if _character_model:
 		_character_model.visible = true
 	_mark_character_ready()
@@ -158,7 +173,10 @@ func _mark_character_ready() -> void:
 
 
 func _spawn_character_node() -> void:
-	_character_model = PLAYER_MODEL.instantiate()
+	var idx = GameSettings.selected_character_index
+	if idx < 0 or idx >= CHARACTER_MODELS.size():
+		idx = 0
+	_character_model = CHARACTER_MODELS[idx].instantiate()
 	_character_model.name = "player"
 	add_child(_character_model)
 	move_child(_character_model, 0)
@@ -167,6 +185,8 @@ func _spawn_character_node() -> void:
 
 func _apply_character_transform(model: Node3D) -> void:
 	var s: float = 0.85
+	if GameSettings.selected_character_index == 4:
+		s = 0.4
 	model.transform = Transform3D(Basis(Vector3.UP, PI).scaled(Vector3(s, s, s)), Vector3.ZERO)
 
 
@@ -176,6 +196,23 @@ func _wire_animation_player() -> void:
 	anim_player = _character_model.get_node_or_null("AnimationPlayer") as AnimationPlayer
 	if anim_player == null:
 		anim_player = _character_model.find_child("AnimationPlayer", true, false) as AnimationPlayer
+	
+	if GameSettings.selected_character_index == 4 and anim_player:
+		for lib_name in anim_player.get_animation_library_list():
+			var lib = anim_player.get_animation_library(lib_name)
+			var new_lib = AnimationLibrary.new()
+			for anim_name in lib.get_animation_list():
+				var anim = lib.get_animation(anim_name).duplicate()
+				for i in range(anim.get_track_count()):
+					var path_str = String(anim.track_get_path(i))
+					if "mixamorig9_" in path_str:
+						anim.track_set_path(i, NodePath(path_str.replace("mixamorig9_", "mixamorig_")))
+					if anim.track_get_type(i) == Animation.TYPE_POSITION_3D:
+						for k in range(anim.track_get_key_count(i)):
+							anim.track_set_key_value(i, k, anim.track_get_key_value(i, k) * 2.125)
+				new_lib.add_animation(anim_name, anim)
+			anim_player.remove_animation_library(lib_name)
+			anim_player.add_animation_library(lib_name, new_lib)
 
 
 func _count_render_meshes(node: Node) -> int:
@@ -189,7 +226,7 @@ func _count_render_meshes(node: Node) -> int:
 	return count
 
 
-func _matte_meshes(node: Node) -> void:
+func _matte_meshes(node: Node, tint: Color = Color.WHITE) -> void:
 	if node is MeshInstance3D:
 		var mi := node as MeshInstance3D
 		if mi.mesh:
@@ -208,9 +245,11 @@ func _matte_meshes(node: Node) -> void:
 					sm.roughness_texture = null
 					sm.metallic_texture = null
 					sm.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+					if tint != Color.WHITE:
+						sm.albedo_color = tint
 				mi.set_surface_override_material(si, flat)
 	for child in node.get_children():
-		_matte_meshes(child)
+		_matte_meshes(child, tint)
 
 
 func _setup_hud() -> void:
@@ -220,12 +259,12 @@ func _setup_hud() -> void:
 	add_child(_hud_layer)
 
 	# Top bar — menu on row 1 left; username row 2 left; best + coins stacked right.
-	_name_label = _make_hud_label(_hud_layer, HORIZONTAL_ALIGNMENT_LEFT, Color(0.9, 0.95, 1.0))
+	_name_label = _make_hud_label(_hud_layer, HORIZONTAL_ALIGNMENT_LEFT, Color(0.4, 0.8, 1.0)) # Neon blue
 	_name_label.add_theme_font_size_override("font_size", BrowserBridge.hud_hint_font() + 2)
-	coin_label = _make_hud_label(_hud_layer, HORIZONTAL_ALIGNMENT_RIGHT, Color(1, 0.96, 0.78))
+	coin_label = _make_hud_label(_hud_layer, HORIZONTAL_ALIGNMENT_RIGHT, Color(1, 0.86, 0.32)) # Neon yellow
 	coin_label.add_theme_font_size_override("font_size", BrowserBridge.hud_font() + 2)
 	coin_label.text = "0"
-	_best_label = _make_hud_label(_hud_layer, HORIZONTAL_ALIGNMENT_RIGHT, Color(1, 0.88, 0.42))
+	_best_label = _make_hud_label(_hud_layer, HORIZONTAL_ALIGNMENT_RIGHT, Color(0.9, 0.7, 0.1)) # Darker neon yellow
 	_best_label.add_theme_font_size_override("font_size", BrowserBridge.hud_hint_font() + 2)
 
 	_setup_back_button(_hud_layer)
@@ -347,8 +386,30 @@ func _setup_start_prompt(layer: CanvasLayer) -> void:
 	_start_btn.custom_minimum_size = Vector2(260, BrowserBridge.popup_button_height())
 	_start_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font() + 2)
 	_start_btn.text = "START"
-	_start_btn.add_theme_stylebox_override("normal", _pill_style(Color(0.16, 0.72, 0.4)))
-	_start_btn.add_theme_color_override("font_color", Color(1, 1, 1))
+	var neon_green = Color(0.16, 0.9, 0.6)
+	_start_btn.add_theme_stylebox_override("normal", _pill_style(neon_green))
+	_start_btn.add_theme_stylebox_override("hover", _pill_style(neon_green.lightened(0.2)))
+	_start_btn.add_theme_stylebox_override("pressed", _pill_style(neon_green.darkened(0.2)))
+	_start_btn.add_theme_color_override("font_color", neon_green)
+	
+	_start_btn.pivot_offset = _start_btn.custom_minimum_size / 2.0
+	_start_btn.mouse_entered.connect(func():
+		var t = create_tween()
+		t.tween_property(_start_btn, "scale", Vector2(1.05, 1.05), 0.1).set_trans(Tween.TRANS_QUAD)
+	)
+	_start_btn.mouse_exited.connect(func():
+		var t = create_tween()
+		t.tween_property(_start_btn, "scale", Vector2(1.0, 1.0), 0.15).set_trans(Tween.TRANS_QUAD)
+	)
+	_start_btn.button_down.connect(func():
+		var t = create_tween()
+		t.tween_property(_start_btn, "scale", Vector2(0.95, 0.95), 0.05).set_trans(Tween.TRANS_QUAD)
+	)
+	_start_btn.button_up.connect(func():
+		var t = create_tween()
+		t.tween_property(_start_btn, "scale", Vector2(1.0, 1.0), 0.1).set_trans(Tween.TRANS_QUAD)
+	)
+	
 	_start_btn.pressed.connect(_on_start_pressed)
 
 	_countdown_label = Label.new()
@@ -442,8 +503,12 @@ func _make_hud_label(parent: Node, align: HorizontalAlignment, color: Color) -> 
 	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	label.add_theme_font_size_override("font_size", BrowserBridge.hud_font())
 	label.add_theme_color_override("font_color", color)
-	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
-	label.add_theme_constant_override("outline_size", 5)
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	label.add_theme_constant_override("outline_size", 8)
+	label.add_theme_color_override("font_shadow_color", color * Color(1, 1, 1, 0.5))
+	label.add_theme_constant_override("shadow_offset_x", 0)
+	label.add_theme_constant_override("shadow_offset_y", 0)
+	label.add_theme_constant_override("shadow_outline_size", 12)
 	return label
 
 
@@ -531,12 +596,12 @@ func _on_finish_resolved(success: bool, data: Dictionary) -> void:
 
 func _card_style() -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.07, 0.09, 0.14, 0.97)
+	sb.bg_color = Color(0.04, 0.03, 0.08, 0.9)
 	sb.set_corner_radius_all(20)
-	sb.set_border_width_all(3)
-	sb.border_color = Color(1, 0.35, 0.3, 0.7)
-	sb.shadow_size = 16
-	sb.shadow_color = Color(0, 0, 0, 0.5)
+	sb.set_border_width_all(2)
+	sb.border_color = Color(1.0, 0.2, 0.3, 0.8)
+	sb.shadow_size = 15
+	sb.shadow_color = Color(1.0, 0.2, 0.3, 0.3)
 	sb.content_margin_left = 8
 	sb.content_margin_right = 8
 	sb.content_margin_top = 8
@@ -551,8 +616,12 @@ func _spacer(h: int) -> Control:
 
 func _pill_style(c: Color) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = c
+	sb.bg_color = Color(0.05, 0.05, 0.08, 0.8) # Neo dark transparent
 	sb.set_corner_radius_all(32)
+	sb.set_border_width_all(2)
+	sb.border_color = c # Neon accent
+	sb.shadow_size = 8
+	sb.shadow_color = c * Color(1, 1, 1, 0.25)
 	return sb
 
 
@@ -602,13 +671,13 @@ func _find_anim(keywords: Array) -> String:
 	return ""
 
 
-func _play_anim(anim_name: String, loop: bool) -> void:
+func _play_anim(anim_name: String, loop: bool, blend_time: float = 0.15) -> void:
 	if anim_name == "" or anim_player == null:
 		return
 	var anim: Animation = anim_player.get_animation(anim_name)
 	if anim:
 		anim.loop_mode = Animation.LOOP_LINEAR if loop else Animation.LOOP_NONE
-	anim_player.play(anim_name)
+	anim_player.play(anim_name, blend_time)
 
 # --- input: swipe to change lane / jump, tap to restart ---------------------
 func _unhandled_input(event: InputEvent) -> void:
@@ -682,6 +751,35 @@ func _go_menu() -> void:
 	get_tree().paused = false
 	get_tree().change_scene_to_file("res://scenes/menu.tscn")
 
+func _process(delta: float) -> void:
+	if camera and game_started and not game_over:
+		var level = get_tree().get_first_node_in_group("level")
+		if level and level.has_method("get_scroll_speed"):
+			var speed = level.get_scroll_speed()
+			var speed_factor = clampf((speed - 30.0) / 20.0, 0.0, 1.0)
+			var target_fov = lerpf(105.0, 125.0, speed_factor)
+			camera.fov = lerpf(camera.fov, target_fov, 5.0 * delta)
+		
+		if shake_intensity > 0.01:
+			camera.h_offset = randf_range(-shake_intensity, shake_intensity)
+			camera.v_offset = randf_range(-shake_intensity, shake_intensity)
+			shake_intensity = lerpf(shake_intensity, 0.0, 15.0 * delta)
+		else:
+			camera.h_offset = 0.0
+			camera.v_offset = 0.0
+
+func shake_camera(intensity: float = 0.5) -> void:
+	shake_intensity = intensity
+
+func _transition_to_run_after_jump() -> void:
+	if anim_player and jump_anim != "" and anim_player.current_animation == jump_anim and anim_player.is_playing():
+		await anim_player.animation_finished
+	
+	if is_dead or game_over or is_jumping or is_sliding:
+		return
+		
+	_play_anim(run_anim, true)
+
 func _physics_process(delta: float) -> void:
 	if game_over:
 		return
@@ -695,13 +793,13 @@ func _physics_process(delta: float) -> void:
 		return
 
 	# keyboard fallback so it's also playable on desktop
-	if Input.is_action_just_pressed("move_left"):
+	if Input.is_action_just_pressed("move_left") or Input.is_action_just_pressed("ui_left"):
 		_change_lane(-1)
-	if Input.is_action_just_pressed("move_right"):
+	if Input.is_action_just_pressed("move_right") or Input.is_action_just_pressed("ui_right"):
 		_change_lane(1)
-	if Input.is_action_just_pressed("jump"):
+	if Input.is_action_just_pressed("jump") or Input.is_action_just_pressed("ui_up"):
 		jump_requested = true
-	if Input.is_action_just_pressed("ui_down"):
+	if Input.is_action_just_pressed("ui_down") or Input.is_action_just_pressed("slide"):
 		slide_requested = true
 
 	var pos: Vector3 = global_transform.origin
@@ -717,8 +815,6 @@ func _physics_process(delta: float) -> void:
 		is_jumping = true
 		if is_sliding:
 			is_sliding = false
-			if _character_model:
-				_character_model.scale.y = 0.85
 		var level := get_tree().get_first_node_in_group("level")
 		if level and level.has_method("get_segment_distance"):
 			MoveLog.log_jump_start(level.get_segment_distance())
@@ -730,16 +826,16 @@ func _physics_process(delta: float) -> void:
 		is_sliding = true
 		slide_timer = 0.75
 		if slide_anim != "":
+			var a := anim_player.get_animation(slide_anim)
+			if a:
+				slide_timer = a.length
 			_play_anim(slide_anim, false)
-		if _character_model:
-			_character_model.scale.y = 0.42
 
 	if is_sliding:
 		slide_timer -= delta
 		if slide_timer <= 0.0:
 			is_sliding = false
-			if _character_model:
-				_character_model.scale.y = 0.85
+			_play_anim(run_anim, true)
 	slide_requested = false
 
 	# gravity + vertical move (no floor collider, handled manually)
@@ -753,7 +849,7 @@ func _physics_process(delta: float) -> void:
 			var level := get_tree().get_first_node_in_group("level")
 			if level and level.has_method("get_segment_distance"):
 				MoveLog.log_jump_land(level.get_segment_distance())
-			_play_anim(run_anim, true)
+			_transition_to_run_after_jump()
 
 	global_transform.origin = pos
 
@@ -761,6 +857,7 @@ func die() -> void:
 	if is_dead:
 		return
 	is_dead = true
+	shake_camera(0.8)
 	var hitbox: Area3D = $collision_area
 	hitbox.monitoring = false
 	hitbox.monitorable = false
@@ -885,7 +982,10 @@ func _on_collision_area_entered(area) -> void:
 			var lane: int = int(parent.get_meta("spawn_lane", current_lane))
 			var dist: float = float(parent.get_meta("map_distance", level.get_segment_distance()))
 			MoveLog.log_coin(oid, lane, dist)
-		parent.queue_free()
+		if parent.has_method("collect"):
+			parent.collect()
+		else:
+			parent.queue_free()
 
 
 func _play_coin_sfx() -> void:

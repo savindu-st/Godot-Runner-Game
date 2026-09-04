@@ -1,0 +1,9 @@
+[gd_scene format=3 uid="uid://cqjmy2n52w43"]
+
+[ext_resource type="PackedScene" uid="uid://bmshy5uue0wip" path="res://models/Remy/character (1).fbx" id="1_fbx"]
+[ext_resource type="AnimationLibrary" uid="uid://qdilu8fqn7mm" path="res://models/Leonard/leonard_anims.tres" id="2_anims"]
+
+[node name="character" instance=ExtResource("1_fbx")]
+
+[node name="AnimationPlayer" parent="." index="1"]
+libraries/leonard_anims = ExtResource("2_anims")
