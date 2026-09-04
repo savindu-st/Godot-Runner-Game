@@ -32,8 +32,17 @@ func collect():
 		return
 	_collected = true
 	var t = create_tween().set_parallel(true)
-	t.tween_property(self, "scale", Vector3(1.5, 1.5, 1.5), 0.15).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	t.tween_property(self, "position:y", position.y + 1.0, 0.15)
+	# Go up and right
+	t.tween_property(self, "position:y", position.y + 1.5, 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	t.tween_property(self, "position:x", position.x + 4.0, 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
+	# Spin fast
+	t.tween_property(self, "rotation:y", rotation.y + PI * 2, 0.4).set_trans(Tween.TRANS_LINEAR)
+	# Pop scale up slightly
+	t.tween_property(self, "scale", Vector3(1.1, 1.1, 1.1), 0.1).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	# Shrink to near 0
+	t.tween_property(self, "scale", Vector3(0.01, 0.01, 0.01), 0.3).set_delay(0.1).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+	
 	if material_override:
-		t.tween_property(material_override, "albedo_color:a", 0.0, 0.15)
+		t.tween_property(material_override, "albedo_color:a", 0.0, 0.3).set_delay(0.1)
+	
 	t.chain().tween_callback(queue_free)
