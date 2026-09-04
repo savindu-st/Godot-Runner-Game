@@ -7,7 +7,7 @@
 [sub_resource type="ProceduralSkyMaterial" id="SkyMat"]
 sky_top_color = Color(0.36, 0.56, 0.86, 1)
 sky_horizon_color = Color(0.42, 0.62, 0.9, 1)
-ground_bottom_color = Color(0.55, 0.62, 0.62, 1)
+ground_bottom_color = Color(0.48, 0.66, 0.88, 1)
 ground_horizon_color = Color(0.48, 0.66, 0.88, 1)
 
 [sub_resource type="Sky" id="Sky"]
@@ -20,9 +20,9 @@ ambient_light_source = 3
 tonemap_mode = 2
 fog_enabled = true
 fog_mode = 1
-fog_light_color = Color(0.45, 0.64, 0.92, 1)
+fog_light_color = Color(0.42, 0.62, 0.9, 1)
 fog_density = 1.0
-fog_sky_affect = 0.45
+fog_sky_affect = 0.0
 fog_depth_curve = 1.2
 fog_depth_begin = 18.0
 fog_depth_end = 54.0

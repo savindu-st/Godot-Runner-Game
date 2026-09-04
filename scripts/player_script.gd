@@ -51,6 +51,7 @@ var coin_count: int = 0
 var coin_label: Label
 var _name_label: Label
 var _best_label: Label
+var _dist_label: Label
 var _back_btn: Button
 var overlay: Control
 var result_label: Label
@@ -70,6 +71,8 @@ var _run_aborted: bool = false
 var _hud_layer: CanvasLayer
 var _character_model: Node3D
 var _character_ready: bool = false
+var _overlay_title: Label
+var _resume_btn: Button
 
 const FINISH_WAIT_SEC: float = 22.0
 
@@ -266,6 +269,10 @@ func _setup_hud() -> void:
 	coin_label.text = "0"
 	_best_label = _make_hud_label(_hud_layer, HORIZONTAL_ALIGNMENT_RIGHT, Color(0.9, 0.7, 0.1)) # Darker neon yellow
 	_best_label.add_theme_font_size_override("font_size", BrowserBridge.hud_hint_font() + 2)
+	
+	_dist_label = _make_hud_label(_hud_layer, HORIZONTAL_ALIGNMENT_RIGHT, Color(0.4, 0.9, 0.6)) # Neon green
+	_dist_label.add_theme_font_size_override("font_size", BrowserBridge.hud_font())
+	_dist_label.text = "0m"
 
 	_setup_back_button(_hud_layer)
 
@@ -301,13 +308,13 @@ func _setup_hud() -> void:
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	box.add_theme_constant_override("separation", 20)
 
-	var title := Label.new()
-	box.add_child(title)
-	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", BrowserBridge.popup_title_font() + 8)
-	title.add_theme_color_override("font_color", Color(1, 0.32, 0.28))
-	title.text = "GAME OVER"
+	_overlay_title = Label.new()
+	box.add_child(_overlay_title)
+	_overlay_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_overlay_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_overlay_title.add_theme_font_size_override("font_size", BrowserBridge.popup_title_font() + 8)
+	_overlay_title.add_theme_color_override("font_color", Color(1, 0.32, 0.28))
+	_overlay_title.text = "GAME OVER"
 
 	result_label = Label.new()
 	box.add_child(result_label)
@@ -320,14 +327,33 @@ func _setup_hud() -> void:
 
 	box.add_child(_spacer(12))
 
+	_resume_btn = Button.new()
+	box.add_child(_resume_btn)
+	_resume_btn.custom_minimum_size = Vector2(0, BrowserBridge.popup_button_height())
+	_resume_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_resume_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font())
+	_resume_btn.text = "RESUME"
+	var resume_color := Color(0.3, 0.9, 0.5)
+	_resume_btn.add_theme_stylebox_override("normal", _pill_style(resume_color))
+	_resume_btn.add_theme_stylebox_override("hover", _pill_style(resume_color.lightened(0.2)))
+	_resume_btn.add_theme_stylebox_override("pressed", _pill_style(resume_color.darkened(0.2)))
+	_resume_btn.add_theme_color_override("font_color", resume_color)
+	_resume_btn.add_theme_color_override("font_hover_color", resume_color.lightened(0.2))
+	_resume_btn.pressed.connect(_resume_game)
+	_resume_btn.visible = false
+
 	_play_again_btn = Button.new()
 	box.add_child(_play_again_btn)
 	_play_again_btn.custom_minimum_size = Vector2(0, BrowserBridge.popup_button_height())
 	_play_again_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_play_again_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font())
 	_play_again_btn.text = "RESTART GAME"
-	_play_again_btn.add_theme_stylebox_override("normal", _pill_style(Color(0.92, 0.95, 1.0)))
-	_play_again_btn.add_theme_color_override("font_color", Color(0.08, 0.1, 0.14))
+	var restart_color := Color(0.92, 0.95, 1.0)
+	_play_again_btn.add_theme_stylebox_override("normal", _pill_style(restart_color))
+	_play_again_btn.add_theme_stylebox_override("hover", _pill_style(restart_color.lightened(0.2)))
+	_play_again_btn.add_theme_stylebox_override("pressed", _pill_style(restart_color.darkened(0.2)))
+	_play_again_btn.add_theme_color_override("font_color", restart_color)
+	_play_again_btn.add_theme_color_override("font_hover_color", restart_color.lightened(0.2))
 	_play_again_btn.pressed.connect(_restart)
 
 	_menu_btn = Button.new()
@@ -335,9 +361,14 @@ func _setup_hud() -> void:
 	_menu_btn.custom_minimum_size = Vector2(0, BrowserBridge.popup_button_height() - 8)
 	_menu_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_menu_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font())
-	_menu_btn.add_theme_color_override("font_color", Color(0.85, 0.72, 0.35))
+	var menu_color := Color(0.85, 0.72, 0.35)
+	_menu_btn.add_theme_color_override("font_color", menu_color)
+	_menu_btn.add_theme_color_override("font_hover_color", menu_color.lightened(0.2))
 	_menu_btn.text = "Menu"
-	_menu_btn.add_theme_stylebox_override("normal", _pill_style(Color(0.12, 0.14, 0.2)))
+	var menu_border_color := Color(0.35, 0.22, 0.12)
+	_menu_btn.add_theme_stylebox_override("normal", _pill_style(menu_border_color))
+	_menu_btn.add_theme_stylebox_override("hover", _pill_style(menu_border_color.lightened(0.2)))
+	_menu_btn.add_theme_stylebox_override("pressed", _pill_style(menu_border_color.darkened(0.2)))
 	_menu_btn.pressed.connect(_go_menu)
 
 	_setup_start_prompt(_hud_layer)
@@ -358,16 +389,40 @@ func _setup_back_button(layer: CanvasLayer) -> void:
 
 
 func _on_back_pressed() -> void:
-	_run_aborted = true
-	_countdown_running = false
-	if game_over:
+	if not game_started or game_over or is_dead or dying:
+		_run_aborted = true
+		_countdown_running = false
+		if game_over:
+			_go_menu()
+			return
+		RunSession.run_active = false
+		var level := get_tree().get_first_node_in_group("level")
+		if level and level.has_method("freeze_world"):
+			level.freeze_world()
 		_go_menu()
 		return
-	RunSession.run_active = false
-	var level := get_tree().get_first_node_in_group("level")
-	if level and level.has_method("freeze_world"):
-		level.freeze_world()
-	_go_menu()
+
+	# PAUSE game
+	get_tree().paused = true
+	_overlay_title.text = "PAUSED"
+	_overlay_title.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
+	result_label.text = "Coins %d" % coin_count
+	
+	if _resume_btn:
+		_resume_btn.visible = true
+		_resume_btn.disabled = false
+	if _play_again_btn:
+		_play_again_btn.disabled = false
+	if _menu_btn:
+		_menu_btn.disabled = false
+		
+	overlay.visible = true
+	overlay.modulate.a = 1.0
+
+
+func _resume_game() -> void:
+	get_tree().paused = false
+	overlay.visible = false
 
 
 func _setup_start_prompt(layer: CanvasLayer) -> void:
@@ -378,9 +433,9 @@ func _setup_start_prompt(layer: CanvasLayer) -> void:
 
 	_start_btn = Button.new()
 	_start_overlay.add_child(_start_btn)
-	_start_btn.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	_start_btn.offset_top = -88.0
-	_start_btn.offset_bottom = -28.0
+	_start_btn.set_anchors_preset(Control.PRESET_CENTER)
+	_start_btn.offset_top = -30.0
+	_start_btn.offset_bottom = 30.0
 	_start_btn.offset_left = -130.0
 	_start_btn.offset_right = 130.0
 	_start_btn.custom_minimum_size = Vector2(260, BrowserBridge.popup_button_height())
@@ -451,6 +506,8 @@ func _enter_attract_mode() -> void:
 		_countdown_label.visible = false
 	_countdown_running = false
 	_run_aborted = false
+	if _dist_label:
+		_dist_label.text = "0m"
 	var idle_anim: String = dance_anim if dance_anim != "" else run_anim
 	_play_anim(idle_anim, true)
 
@@ -499,16 +556,16 @@ func _make_hud_label(parent: Node, align: HorizontalAlignment, color: Color) -> 
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.horizontal_alignment = align
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.clip_text = true
-	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	label.clip_text = false
+	label.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
 	label.add_theme_font_size_override("font_size", BrowserBridge.hud_font())
 	label.add_theme_color_override("font_color", color)
-	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
-	label.add_theme_constant_override("outline_size", 8)
-	label.add_theme_color_override("font_shadow_color", color * Color(1, 1, 1, 0.5))
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+	label.add_theme_constant_override("outline_size", 10)
+	label.add_theme_color_override("font_shadow_color", color * Color(1, 1, 1, 0.6))
 	label.add_theme_constant_override("shadow_offset_x", 0)
-	label.add_theme_constant_override("shadow_offset_y", 0)
-	label.add_theme_constant_override("shadow_outline_size", 12)
+	label.add_theme_constant_override("shadow_offset_y", 4)
+	label.add_theme_constant_override("shadow_outline_size", 16)
 	return label
 
 
@@ -528,9 +585,9 @@ func _layout_hud_panels() -> void:
 	var row_h := 34.0
 	var row_gap := 10.0
 	var col_gap := 16.0
-	var right_w := clampf(width * 0.3, 96.0, 156.0)
+	var right_w := 300.0
 	var right_x := width - pad_right - right_w
-
+	
 	if _back_btn:
 		_back_btn.position = Vector2(pad_left, pad_top)
 		_back_btn.size = Vector2(menu_size, menu_size)
@@ -544,20 +601,35 @@ func _layout_hud_panels() -> void:
 	if _best_label:
 		_best_label.position = Vector2(right_x, pad_top)
 		_best_label.size = Vector2(right_w, row_h)
+		_best_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 
 	if coin_label:
 		coin_label.position = Vector2(right_x, pad_top + row_h + 4.0)
 		coin_label.size = Vector2(right_w, row_h + 2.0)
+		coin_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 
+	if _dist_label:
+		_dist_label.position = Vector2(right_x, pad_top + (row_h + 4.0) * 2)
+		_dist_label.size = Vector2(right_w, row_h + 2.0)
+		_dist_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 
 func _refresh_coin_hud() -> void:
 	if coin_label:
-		coin_label.text = str(coin_count)
+		if coin_label.text != str(coin_count):
+			coin_label.text = str(coin_count)
+			var t := create_tween()
+			coin_label.pivot_offset = coin_label.size / 2.0
+			coin_label.scale = Vector2(1.3, 1.3)
+			t.tween_property(coin_label, "scale", Vector2(1.0, 1.0), 0.3).set_trans(Tween.TRANS_SPRING).set_ease(Tween.EASE_OUT)
+		else:
+			coin_label.text = str(coin_count)
 	var show_hud := true
 	if _name_label:
 		_name_label.visible = show_hud
 	if _best_label:
 		_best_label.visible = show_hud
+	if _dist_label:
+		_dist_label.visible = show_hud
 	if not show_hud:
 		return
 	var player_name := AuthSession.username.strip_edges()
@@ -681,6 +753,17 @@ func _play_anim(anim_name: String, loop: bool, blend_time: float = 0.15) -> void
 
 # --- input: swipe to change lane / jump, tap to restart ---------------------
 func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel"):
+		_on_back_pressed()
+		return
+		
+	if event.is_action_pressed("ui_accept"):
+		if game_over:
+			_restart()
+		elif not game_started and not _countdown_running:
+			_on_start_pressed()
+		return
+
 	if game_over or not game_started:
 		return
 
@@ -754,11 +837,15 @@ func _go_menu() -> void:
 func _process(delta: float) -> void:
 	if camera and game_started and not game_over:
 		var level = get_tree().get_first_node_in_group("level")
-		if level and level.has_method("get_scroll_speed"):
-			var speed = level.get_scroll_speed()
-			var speed_factor = clampf((speed - 30.0) / 20.0, 0.0, 1.0)
-			var target_fov = lerpf(105.0, 125.0, speed_factor)
-			camera.fov = lerpf(camera.fov, target_fov, 5.0 * delta)
+		if level:
+			if _dist_label and "run_distance" in level:
+				_dist_label.text = "%dm" % int(level.run_distance / 2.0)
+				
+			if level.has_method("get_scroll_speed"):
+				var speed = level.get_scroll_speed()
+				var speed_factor = clampf((speed - 30.0) / 20.0, 0.0, 1.0)
+				var target_fov = lerpf(105.0, 125.0, speed_factor)
+				camera.fov = lerpf(camera.fov, target_fov, 5.0 * delta)
 		
 		if shake_intensity > 0.01:
 			camera.h_offset = randf_range(-shake_intensity, shake_intensity)
@@ -948,6 +1035,12 @@ func _trigger_game_over() -> void:
 
 	get_tree().paused = true
 
+	if _overlay_title:
+		_overlay_title.text = "GAME OVER"
+		_overlay_title.add_theme_color_override("font_color", Color(1, 0.32, 0.28))
+
+	if _resume_btn:
+		_resume_btn.visible = false
 	if _play_again_btn:
 		_play_again_btn.disabled = false
 	if _menu_btn:
