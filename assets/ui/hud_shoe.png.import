@@ -2,24 +2,20 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://7wr8thra6jhg"
-path.s3tc="res://.godot/imported/anime-girl_Ch46_1001_Diffuse_1.png-8bcfb0f27121a0acffd2e321e6302244.s3tc.ctex"
+uid="uid://0igcae05ibdw"
+path="res://.godot/imported/hud_shoe.png-5be6c3fe6533f8af1d60009e41054e37.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
-"vram_texture": true
-}
-generator_parameters={
-"md5": "28431fd922a911f507c7453a8262f444"
+"vram_texture": false
 }
 
 [deps]
 
-source_file="res://models/anime-girl/anime-girl_Ch46_1001_Diffuse_1.png"
-dest_files=["res://.godot/imported/anime-girl_Ch46_1001_Diffuse_1.png-8bcfb0f27121a0acffd2e321e6302244.s3tc.ctex"]
+source_file="res://assets/ui/hud_shoe.png"
+dest_files=["res://.godot/imported/hud_shoe.png-5be6c3fe6533f8af1d60009e41054e37.ctex"]
 
 [params]
 
-compress/mode=2
+compress/mode=0
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -27,7 +23,7 @@ compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=true
+mipmaps/generate=false
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""
@@ -41,4 +37,4 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=0
+detect_3d/compress_to=1

@@ -2,19 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cugihjyiteybp"
-path="res://.godot/imported/character2_Ch46_1001_Specular.png-0a2a3e56d1054e75ed60d6f882922b5f.ctex"
+uid="uid://c5a7wx7y838sj"
+path="res://.godot/imported/hud_crown.png-ed1d1e804b6351635d57b528b61ae526.ctex"
 metadata={
 "vram_texture": false
-}
-generator_parameters={
-"md5": "7d03bdaf4334317d2fc04bcc78bfe795"
 }
 
 [deps]
 
-source_file="res://models/character2/character2_Ch46_1001_Specular.png"
-dest_files=["res://.godot/imported/character2_Ch46_1001_Specular.png-0a2a3e56d1054e75ed60d6f882922b5f.ctex"]
+source_file="res://assets/ui/hud_crown.png"
+dest_files=["res://.godot/imported/hud_crown.png-ed1d1e804b6351635d57b528b61ae526.ctex"]
 
 [params]
 
@@ -26,7 +23,7 @@ compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=true
+mipmaps/generate=false
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""
