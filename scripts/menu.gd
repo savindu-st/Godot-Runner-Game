@@ -33,8 +33,12 @@ var _char_3d_root: Node3D
 var _char_model_instance: Node3D
 var _current_char_index: int = 0
 
+const HudSign = preload("res://scripts/hud_sign.gd")
+
 var _menu_name_label: Label
 var _menu_best_label: Label
+var _menu_name_sign: HudSign
+var _menu_best_sign: HudSign
 var _play_wait_timer: Timer
 var _offline_name_field: LineEdit
 var _btn_font: int = 42
@@ -112,10 +116,15 @@ func _build_ui() -> void:
 	_title_label = Label.new()
 	root.add_child(_title_label)
 	_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var font = HudSign.get_hud_font()
+	if font:
+		_title_label.add_theme_font_override("font", font)
 	_title_label.add_theme_font_size_override("font_size", _title_font)
 	_title_label.add_theme_color_override("font_color", Color(1, 0.86, 0.32)) # Neon yellow
-	_title_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.55))
-	_title_label.add_theme_constant_override("outline_size", 10)
+	_title_label.add_theme_color_override("font_outline_color", Color(0.04, 0.02, 0.01, 0.95))
+	_title_label.add_theme_constant_override("outline_size", 14)
+	_title_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	_title_label.add_theme_constant_override("shadow_offset_y", 6)
 	_title_label.text = "EVER DASH"
 	
 	_title_label.resized.connect(func():
@@ -154,40 +163,43 @@ func _build_ui() -> void:
 
 
 func _build_menu_top_bar() -> void:
-	_menu_name_label = _menu_hud_label(HORIZONTAL_ALIGNMENT_LEFT, Color(0.9, 0.95, 1.0))
-	add_child(_menu_name_label)
+	_menu_name_sign = HudSign.create_sign(HudSign.SignType.PLAYER, "Guest")
+	_menu_name_sign.z_index = 20
+	add_child(_menu_name_sign)
+	_menu_name_label = _menu_name_sign.label
 
-	_menu_best_label = _menu_hud_label(HORIZONTAL_ALIGNMENT_RIGHT, Color(1, 0.88, 0.42))
-	add_child(_menu_best_label)
+	_menu_best_sign = HudSign.create_sign(HudSign.SignType.BEST, "Best 0")
+	_menu_best_sign.z_index = 20
+	add_child(_menu_best_sign)
+	_menu_best_label = _menu_best_sign.label
+	_menu_best_sign.start_idle_wobble()
 
 	call_deferred("_layout_menu_top_bar")
 	_refresh_menu_top_bar()
 
 
 func _layout_menu_top_bar() -> void:
-	if _menu_name_label == null:
+	if _menu_name_sign == null:
 		return
 	var width := get_viewport().get_visible_rect().size.x
 	if width <= 0.0:
 		width = float(get_viewport().size.x)
 	if width <= 0.0:
 		width = 720.0
-	var top := 18.0
-	var height := 44.0
-	var side_w := 220.0
-	var best_side_w := 350.0
-	_menu_name_label.position = Vector2(18.0, top)
-	_menu_name_label.size = Vector2(side_w, height)
-	_menu_best_label.position = Vector2(width - best_side_w - 24.0, top)
-	_menu_best_label.size = Vector2(best_side_w, height)
+	var top := 22.0
+	var pad_left := maxf(BrowserBridge.popup_edge_margin() + 16.0, 24.0)
+	var pad_right := maxf(BrowserBridge.popup_edge_margin() + 16.0, 24.0)
+	
+	_menu_name_sign.align_left(pad_left, top)
+	_menu_best_sign.align_right(width - pad_right, top)
 
 
 func _refresh_menu_top_bar() -> void:
-	if _menu_name_label == null:
+	if _menu_name_sign == null:
 		return
 	var show_hud := true
-	_menu_name_label.visible = show_hud
-	_menu_best_label.visible = show_hud
+	_menu_name_sign.visible = show_hud
+	_menu_best_sign.visible = show_hud
 	if not show_hud:
 		return
 	var player_name := AuthSession.username.strip_edges()
@@ -195,8 +207,15 @@ func _refresh_menu_top_bar() -> void:
 		player_name = AuthSession.index_number.strip_edges()
 	if player_name == "":
 		player_name = "Guest"
-	_menu_name_label.text = player_name
-	_menu_best_label.text = "Best %d" % AuthSession.best_coins
+	_menu_name_sign.set_text(player_name)
+	_menu_best_sign.set_text("Best %d" % AuthSession.best_coins)
+	
+	var width := get_viewport().get_visible_rect().size.x
+	if width <= 0.0: width = 720.0
+	var pad_left := maxf(BrowserBridge.popup_edge_margin() + 16.0, 24.0)
+	var pad_right := maxf(BrowserBridge.popup_edge_margin() + 16.0, 24.0)
+	_menu_name_sign.align_left(pad_left, 22.0)
+	_menu_best_sign.align_right(width - pad_right, 22.0)
 
 
 func _menu_hud_label(align: HorizontalAlignment, color: Color) -> Label:
@@ -207,6 +226,9 @@ func _menu_hud_label(align: HorizontalAlignment, color: Color) -> Label:
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.clip_text = false
 	label.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+	var font = HudSign.get_hud_font()
+	if font:
+		label.add_theme_font_override("font", font)
 	label.add_theme_font_size_override("font_size", BrowserBridge.hud_font())
 	label.add_theme_color_override("font_color", color)
 	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
@@ -373,6 +395,9 @@ func _add_menu_button(parent: Control, text: String, col: Color, cb: Callable) -
 	var h := BrowserBridge.menu_button_height()
 	btn.custom_minimum_size = Vector2(0, h)
 	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var font = HudSign.get_hud_font()
+	if font:
+		btn.add_theme_font_override("font", font)
 	btn.add_theme_font_size_override("font_size", _btn_font)
 	btn.text = text
 	btn.add_theme_stylebox_override("normal", _pill(col))
