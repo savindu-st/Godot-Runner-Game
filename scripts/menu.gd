@@ -20,6 +20,7 @@ var _settings_box: VBoxContainer
 var _sound_btn: Button
 var _play_btn: Button
 var _auth_panel: Control
+var _leaderboard_panel: Control
 var _login_btn: Button
 var _logout_btn: Button
 var _title_label: Label
@@ -143,6 +144,7 @@ func _build_ui() -> void:
 
 	_play_btn = _add_menu_button(btn_col, "PLAY", Color(0.16, 0.72, 0.4), _on_play)
 	_characters_btn = _add_menu_button(btn_col, "CHARACTERS", Color(0.2, 0.5, 0.75), _show_char_selection)
+	_add_menu_button(btn_col, "LEADERBOARD", Color(1.0, 0.75, 0.2), _show_leaderboard)
 	_add_menu_button(btn_col, "SETTINGS", Color(0.28, 0.32, 0.42), _show_settings)
 	if OS.get_name() != "Web":
 		_add_menu_button(btn_col, "QUIT", Color(0.45, 0.18, 0.18), _on_quit)
@@ -159,17 +161,34 @@ func _build_ui() -> void:
 	auth_layer.add_child(_auth_panel)
 	_auth_panel.logged_in.connect(_on_logged_in)
 
+	_leaderboard_panel = load("res://scripts/leaderboard_panel.gd").new()
+	auth_layer.add_child(_leaderboard_panel)
+	_leaderboard_panel.request_open_auth.connect(_show_auth_panel)
+
 	_build_menu_top_bar()
 
 
 func _build_menu_top_bar() -> void:
 	_menu_name_sign = HudSign.create_sign(HudSign.SignType.PLAYER, "Guest")
 	_menu_name_sign.z_index = 20
+	_menu_name_sign.mouse_filter = Control.MOUSE_FILTER_STOP
+	_menu_name_sign.gui_input.connect(func(e: InputEvent):
+		if (e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT) or (e is InputEventScreenTouch and e.pressed):
+			if not AuthSession.is_logged_in():
+				_show_auth_panel()
+			else:
+				_show_settings()
+	)
 	add_child(_menu_name_sign)
 	_menu_name_label = _menu_name_sign.label
 
 	_menu_best_sign = HudSign.create_sign(HudSign.SignType.BEST, "Best 0")
 	_menu_best_sign.z_index = 20
+	_menu_best_sign.mouse_filter = Control.MOUSE_FILTER_STOP
+	_menu_best_sign.gui_input.connect(func(e: InputEvent):
+		if (e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT) or (e is InputEventScreenTouch and e.pressed):
+			_show_leaderboard()
+	)
 	add_child(_menu_best_sign)
 	_menu_best_label = _menu_best_sign.label
 	_menu_best_sign.start_idle_wobble()
@@ -208,7 +227,7 @@ func _refresh_menu_top_bar() -> void:
 	if player_name == "":
 		player_name = "Guest"
 	_menu_name_sign.set_text(player_name)
-	_menu_best_sign.set_text("Best %d" % AuthSession.best_coins)
+	_menu_best_sign.set_text("Best %dm" % AuthSession.best_distance)
 	
 	var width := get_viewport().get_visible_rect().size.x
 	if width <= 0.0: width = 720.0
@@ -359,11 +378,10 @@ func _hide_settings() -> void:
 
 
 func _refresh_auth_ui() -> void:
-	var needs_auth := false
 	if _login_btn:
-		_login_btn.visible = false
+		_login_btn.visible = not AuthSession.is_logged_in()
 	if _logout_btn:
-		_logout_btn.visible = false
+		_logout_btn.visible = AuthSession.is_logged_in()
 	if _play_btn:
 		_play_btn.disabled = false
 		_play_btn.text = "PLAY"
@@ -373,10 +391,26 @@ func _refresh_auth_ui() -> void:
 func _show_auth_panel() -> void:
 	_hide_settings()
 	_hide_overlay()
+	_hide_char_selection()
+	if _leaderboard_panel and _leaderboard_panel.visible:
+		_leaderboard_panel.close()
 	if _auth_panel.has_method("open"):
 		_auth_panel.open()
 	else:
 		_auth_panel.visible = true
+
+
+func _show_leaderboard() -> void:
+	_hide_settings()
+	_hide_overlay()
+	_hide_char_selection()
+	if _auth_panel and _auth_panel.visible:
+		if _auth_panel.has_method("close"):
+			_auth_panel.close()
+		else:
+			_auth_panel.visible = false
+	if _leaderboard_panel:
+		_leaderboard_panel.open()
 
 
 func _on_logged_in() -> void:
@@ -877,6 +911,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			else:
 				_auth_panel.visible = false
 			_refresh_auth_ui()
+		elif _leaderboard_panel and _leaderboard_panel.visible:
+			_leaderboard_panel.close()
 	elif event.is_action_pressed("ui_accept"):
 		if _settings_panel and _settings_panel.visible:
 			pass

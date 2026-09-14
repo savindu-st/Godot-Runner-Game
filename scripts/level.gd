@@ -1173,7 +1173,7 @@ func _physics_process(_delta: float) -> void:
 					MoveLog.log_jump_land(dist)
 				MoveLog.log_collision(oid, lane, dist)
 				player.die()
-				RunSession.submit_finish(dist, "collision")
+				RunSession.submit_finish(dist, "collision", run_distance / 2.0)
 			else:
 				player.die()
 			return
