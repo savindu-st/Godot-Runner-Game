@@ -383,8 +383,8 @@ func _setup_signs() -> void:
 func _on_sign_timer() -> void:
 	if _game_stopped():
 		return
-	var name: String = street_names[sign_index]
-	if name == "Lagaan" and has_special_arch:
+	var street_name: String = street_names[sign_index]
+	if street_name == "Lagaan" and has_special_arch:
 		_spawn_sign("Lagaan")
 		_spawn_concert_boards()
 		sign_index = (sign_index + 1) % street_names.size()
@@ -392,7 +392,7 @@ func _on_sign_timer() -> void:
 		var concert_travel: float = abs(concert_z) / get_scroll_speed()
 		sign_timer.wait_time = concert_travel + 4.0
 		return
-	_spawn_sign(name)
+	_spawn_sign(street_name)
 	sign_index = (sign_index + 1) % street_names.size()
 	sign_timer.wait_time = randf_range(7.5, 11.0)
 

@@ -123,26 +123,26 @@ func _full_url(path: String) -> String:
 	if path.begins_with("http://") or path.begins_with("https://"):
 		return path
 	if SimConstants.has_supabase():
-		var base := SimConstants.SUPABASE_URL.rstrip("/")
+		var supabase_base := SimConstants.SUPABASE_URL.rstrip("/")
 		if path.begins_with("/auth/v1") or path.begins_with("/rest/v1"):
-			return base + path
+			return supabase_base + path
 		if path == "/v1/auth/login":
-			return base + "/auth/v1/token?grant_type=password"
+			return supabase_base + "/auth/v1/token?grant_type=password"
 		if path == "/v1/auth/register" or path == "/v1/auth/signup":
-			return base + "/auth/v1/signup"
+			return supabase_base + "/auth/v1/signup"
 		if path == "/v1/auth/me":
-			return base + "/auth/v1/user"
+			return supabase_base + "/auth/v1/user"
 		if path == "/v1/leaderboard":
-			return base + "/rest/v1/profiles?select=username,best_distance,best_coins&order=best_distance.desc,updated_at.asc&limit=20"
+			return supabase_base + "/rest/v1/profiles?select=username,best_distance,best_coins&order=best_distance.desc,updated_at.asc&limit=20"
 		if path == "/v1/leaderboard/me":
-			return base + "/rest/v1/rpc/get_my_rank"
+			return supabase_base + "/rest/v1/rpc/get_my_rank"
 		if path == "/v1/run/finish" or path == "/v1/score/submit":
-			return base + "/rest/v1/rpc/submit_score"
-		return base + path
-	var base := SimConstants.API_BASE.rstrip("/")
+			return supabase_base + "/rest/v1/rpc/submit_score"
+		return supabase_base + path
+	var api_base := SimConstants.API_BASE.rstrip("/")
 	if path.begins_with("/"):
-		return base + path
-	return base + "/" + path
+		return api_base + path
+	return api_base + "/" + path
 
 
 func _on_request_completed(result: int, code: int, _headers: PackedStringArray, body_bytes: PackedByteArray) -> void:

@@ -34,8 +34,6 @@ var _char_3d_root: Node3D
 var _char_model_instance: Node3D
 var _current_char_index: int = 0
 
-const HudSign = preload("res://scripts/hud_sign.gd")
-
 var _menu_name_label: Label
 var _menu_best_label: Label
 var _menu_name_sign: HudSign

@@ -2,8 +2,6 @@ extends CharacterBody3D
 
 signal character_ready
 
-const HudSign = preload("res://scripts/hud_sign.gd")
-
 const CHARACTER_MODELS: Array[PackedScene] = [
 	preload("res://models/Leonard/character.tscn"),
 	preload("res://models/Remy/character.tscn")
@@ -1046,7 +1044,7 @@ func _restart() -> void:
 	RunSession.restart_run()
 
 
-func _on_restart_run_ready(success: bool, error_message: String) -> void:
+func _on_restart_run_ready(success: bool, _error_message: String) -> void:
 	if success:
 		get_tree().reload_current_scene()
 		return
@@ -1074,7 +1072,7 @@ func _process(delta: float) -> void:
 				if _dist_sign:
 					if _dist_sign.get_text() != dist_text:
 						_dist_sign.set_text(dist_text)
-						var milestone: int = cur_dist / 100
+						var milestone: int = int(cur_dist / 100.0)
 						if milestone > _last_dist_milestone and cur_dist > 0:
 							_last_dist_milestone = milestone
 							_dist_sign.bounce(1.25)

@@ -1,7 +1,7 @@
 extends Node
 
 var segment_index: int = 0
-var seed: int = 0
+var segment_seed: int = 0
 var initial_lane: int = 1
 var started_at_ms: int = 0
 var events: Array = []
@@ -10,7 +10,7 @@ var _last_lane_change_ms: int = -99999
 
 func reset(p_segment_index: int, p_seed: int, p_lane: int) -> void:
 	segment_index = p_segment_index
-	seed = p_seed
+	segment_seed = p_seed
 	initial_lane = p_lane
 	started_at_ms = Time.get_ticks_msec()
 	events.clear()
@@ -71,7 +71,7 @@ func to_dict(end_reason: String, final_distance: float) -> Dictionary:
 	return {
 		"sim_version": SimConstants.SIM_VERSION,
 		"segment_index": segment_index,
-		"seed": seed,
+		"seed": segment_seed,
 		"initial_lane": initial_lane,
 		"events": events.duplicate(true),
 		"end_reason": end_reason,
