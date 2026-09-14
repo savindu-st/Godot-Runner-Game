@@ -79,6 +79,10 @@ var _character_model: Node3D
 var _character_ready: bool = false
 var _overlay_title: Label
 var _resume_btn: Button
+var _claim_btn: Button
+var _lb_btn: Button
+var _auth_panel: Control
+var _leaderboard_panel: Control
 
 const FINISH_WAIT_SEC: float = 22.0
 
@@ -362,6 +366,43 @@ func _setup_hud() -> void:
 	_resume_btn.pressed.connect(_resume_game)
 	_resume_btn.visible = false
 
+	_claim_btn = Button.new()
+	box.add_child(_claim_btn)
+	_claim_btn.custom_minimum_size = Vector2(0, BrowserBridge.popup_button_height())
+	_claim_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if font:
+		_claim_btn.add_theme_font_override("font", font)
+	_claim_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font())
+	_claim_btn.text = "CLAIM ON LEADERBOARD"
+	var claim_color := Color(0.2, 0.8, 0.45)
+	_claim_btn.add_theme_stylebox_override("normal", _pill_style(claim_color))
+	_claim_btn.add_theme_stylebox_override("hover", _pill_style(claim_color.lightened(0.2)))
+	_claim_btn.add_theme_stylebox_override("pressed", _pill_style(claim_color.darkened(0.2)))
+	_claim_btn.add_theme_color_override("font_color", claim_color)
+	_claim_btn.pressed.connect(func():
+		if _auth_panel:
+			_auth_panel.open()
+	)
+	_claim_btn.visible = false
+
+	_lb_btn = Button.new()
+	box.add_child(_lb_btn)
+	_lb_btn.custom_minimum_size = Vector2(0, BrowserBridge.popup_button_height())
+	_lb_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if font:
+		_lb_btn.add_theme_font_override("font", font)
+	_lb_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font())
+	_lb_btn.text = "LEADERBOARD"
+	var lb_color := Color(1.0, 0.75, 0.2)
+	_lb_btn.add_theme_stylebox_override("normal", _pill_style(lb_color))
+	_lb_btn.add_theme_stylebox_override("hover", _pill_style(lb_color.lightened(0.2)))
+	_lb_btn.add_theme_stylebox_override("pressed", _pill_style(lb_color.darkened(0.2)))
+	_lb_btn.add_theme_color_override("font_color", lb_color)
+	_lb_btn.pressed.connect(func():
+		if _leaderboard_panel:
+			_leaderboard_panel.open()
+	)
+
 	_play_again_btn = Button.new()
 	box.add_child(_play_again_btn)
 	_play_again_btn.custom_minimum_size = Vector2(0, BrowserBridge.popup_button_height())
@@ -394,6 +435,25 @@ func _setup_hud() -> void:
 	_menu_btn.add_theme_stylebox_override("hover", _pill_style(menu_border_color.lightened(0.2)))
 	_menu_btn.add_theme_stylebox_override("pressed", _pill_style(menu_border_color.darkened(0.2)))
 	_menu_btn.pressed.connect(_go_menu)
+
+	_auth_panel = load("res://scripts/auth_panel.gd").new()
+	_hud_layer.add_child(_auth_panel)
+	_auth_panel.logged_in.connect(func():
+		_finish_ui_finalized = false
+		if coin_count > 0 and SimConstants.has_supabase():
+			ApiClient.post_with_jwt("/v1/run/finish", {
+				"p_coins": coin_count,
+				"p_duration_sec": 60.0,
+			})
+		_trigger_game_over()
+	)
+
+	_leaderboard_panel = load("res://scripts/leaderboard_panel.gd").new()
+	_hud_layer.add_child(_leaderboard_panel)
+	_leaderboard_panel.request_open_auth.connect(func():
+		if _auth_panel:
+			_auth_panel.open()
+	)
 
 	_setup_start_prompt(_hud_layer)
 	call_deferred("_layout_hud_panels")
@@ -1156,9 +1216,23 @@ func _start_death() -> void:
 	await get_tree().create_timer(death_wait, true).timeout
 	if RunSession.offline_mode:
 		_finish_success = true
+		var level = get_tree().get_first_node_in_group("level")
+		var current_dist: int = 0
+		if level and "run_distance" in level:
+			current_dist = int(level.run_distance / 2.0)
+		var is_new := current_dist > AuthSession.best_distance
+		if is_new:
+			AuthSession.best_distance = current_dist
 		if coin_count > AuthSession.best_coins:
-			AuthSession.set_auth({"best_coins": coin_count})
-		_finish_data = {"final_coins": coin_count}
+			AuthSession.best_coins = coin_count
+		AuthSession._persist()
+		_finish_data = {
+			"final_distance": current_dist,
+			"best_distance": AuthSession.best_distance,
+			"final_coins": coin_count,
+			"best_coins": AuthSession.best_coins,
+			"is_new_best": is_new,
+		}
 		_show_game_over_loading()
 		_trigger_game_over()
 		return
@@ -1232,14 +1306,43 @@ func _trigger_game_over() -> void:
 		_menu_btn.disabled = false
 
 	var lines: PackedStringArray = PackedStringArray()
-	if _finish_success:
-		var display_coins: int = int(_finish_data.get("final_coins", 0))
-		lines.append("Coins %d" % display_coins)
-		var rank: int = int(_finish_data.get("rank", 0))
-		if rank > 0:
-			lines.append("Rank #%d" % rank)
+	var display_distance: int = 0
+	if _finish_data.has("final_distance"):
+		display_distance = int(_finish_data["final_distance"])
+	elif _finish_data.has("submitted_distance"):
+		display_distance = int(_finish_data["submitted_distance"])
 	else:
-		lines.append(GameSettings.USER_ERROR_MSG)
+		var level = get_tree().get_first_node_in_group("level")
+		if level and "run_distance" in level:
+			display_distance = int(level.run_distance / 2.0)
+
+	var display_coins: int = coin_count
+	if _finish_data.has("final_coins"):
+		display_coins = int(_finish_data["final_coins"])
+
+	lines.append("Distance: %dm" % display_distance)
+	lines.append("Coins: %d" % display_coins)
+
+	var is_new_best: bool = bool(_finish_data.get("is_new_best", false)) or (display_distance > AuthSession.best_distance)
+
+	if AuthSession.is_logged_in():
+		var rank: int = int(_finish_data.get("rank", AuthSession.global_rank))
+		if rank > 0:
+			lines.append("Global Rank: #%d" % rank)
+		if is_new_best:
+			lines.append("🌟 NEW DISTANCE RECORD! 🌟")
+		else:
+			lines.append("Best: %dm" % AuthSession.best_distance)
+		if _claim_btn:
+			_claim_btn.visible = false
+	else:
+		if is_new_best:
+			lines.append("🌟 NEW GUEST RECORD! 🌟")
+		else:
+			lines.append("Guest Best: %dm" % AuthSession.best_distance)
+		lines.append("Sign in to join the Leaderboard!")
+		if _claim_btn:
+			_claim_btn.visible = true
 
 	result_label.text = "\n".join(lines)
 	overlay.visible = true

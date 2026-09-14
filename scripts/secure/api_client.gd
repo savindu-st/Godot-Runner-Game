@@ -23,7 +23,11 @@ func _ready() -> void:
 
 
 func post_unsigned(path: String, body_dict: Dictionary = {}) -> void:
-	post_with_headers(path, body_dict, PackedStringArray(["Content-Type: application/json"]))
+	var headers := PackedStringArray(["Content-Type: application/json"])
+	if SimConstants.has_supabase():
+		headers.append("apikey: " + SimConstants.SUPABASE_ANON_KEY)
+		headers.append("Authorization: Bearer " + SimConstants.SUPABASE_ANON_KEY)
+	post_with_headers(path, body_dict, headers)
 
 
 func post_with_jwt(path: String, body_dict: Dictionary = {}) -> void:
@@ -34,6 +38,8 @@ func post_with_jwt(path: String, body_dict: Dictionary = {}) -> void:
 		"Content-Type: application/json",
 		"Authorization: Bearer " + AuthSession.token,
 	]
+	if SimConstants.has_supabase():
+		headers.append("apikey: " + SimConstants.SUPABASE_ANON_KEY)
 	post_with_headers(path, body_dict, headers)
 
 
@@ -43,6 +49,11 @@ func post_with_headers(path: String, body_dict: Dictionary, headers: PackedStrin
 
 
 func post_signed(path: String, body_dict: Dictionary) -> void:
+	# If using Supabase directly, route RPC score submissions directly
+	if SimConstants.has_supabase() and (path == "/v1/run/finish" or path == "/v1/score/submit"):
+		post_with_jwt(path, body_dict)
+		return
+
 	if not RunSession.has_session():
 		_log("POST %s blocked — no session yet" % path)
 		request_finished.emit(path, false, 0, {"error": "no_session"})
@@ -64,7 +75,13 @@ func post_signed(path: String, body_dict: Dictionary) -> void:
 
 func get_json(path: String) -> void:
 	var headers: PackedStringArray = []
-	if AuthSession.is_logged_in():
+	if SimConstants.has_supabase():
+		headers.append("apikey: " + SimConstants.SUPABASE_ANON_KEY)
+		if AuthSession.is_logged_in():
+			headers.append("Authorization: Bearer " + AuthSession.token)
+		else:
+			headers.append("Authorization: Bearer " + SimConstants.SUPABASE_ANON_KEY)
+	elif AuthSession.is_logged_in():
 		headers.append("Authorization: Bearer " + AuthSession.token)
 	_enqueue(path, HTTPClient.METHOD_GET, headers, "")
 
@@ -103,6 +120,25 @@ func _pump_queue() -> void:
 
 
 func _full_url(path: String) -> String:
+	if path.begins_with("http://") or path.begins_with("https://"):
+		return path
+	if SimConstants.has_supabase():
+		var base := SimConstants.SUPABASE_URL.rstrip("/")
+		if path.begins_with("/auth/v1") or path.begins_with("/rest/v1"):
+			return base + path
+		if path == "/v1/auth/login":
+			return base + "/auth/v1/token?grant_type=password"
+		if path == "/v1/auth/register" or path == "/v1/auth/signup":
+			return base + "/auth/v1/signup"
+		if path == "/v1/auth/me":
+			return base + "/auth/v1/user"
+		if path == "/v1/leaderboard":
+			return base + "/rest/v1/profiles?select=username,best_distance,best_coins&order=best_distance.desc,updated_at.asc&limit=20"
+		if path == "/v1/leaderboard/me":
+			return base + "/rest/v1/rpc/get_my_rank"
+		if path == "/v1/run/finish" or path == "/v1/score/submit":
+			return base + "/rest/v1/rpc/submit_score"
+		return base + path
 	var base := SimConstants.API_BASE.rstrip("/")
 	if path.begins_with("/"):
 		return base + path
@@ -118,19 +154,31 @@ func _on_request_completed(result: int, code: int, _headers: PackedStringArray, 
 	if body_bytes.size() > 0:
 		raw = body_bytes.get_string_from_utf8()
 		var json := JSON.new()
-		if json.parse(raw) == OK and json.data is Dictionary:
-			parsed = json.data
+		if json.parse(raw) == OK:
+			if json.data is Dictionary:
+				parsed = json.data
+			elif json.data is Array:
+				parsed = {"data": json.data}
+			else:
+				parsed = {"value": json.data, "raw": raw}
 		else:
 			parsed = {"raw": raw}
 
 	var ok := result == HTTPRequest.RESULT_SUCCESS and code >= 200 and code < 300
-	if not ok and not parsed.has("error"):
-		if result != HTTPRequest.RESULT_SUCCESS:
-			parsed["error"] = "connection_failed"
-			parsed["message"] = "Could not reach server."
-		elif code == 0:
-			parsed["error"] = "connection_failed"
-			parsed["message"] = "Could not reach server."
+	if not ok:
+		if not parsed.has("error"):
+			if parsed.has("error_description"):
+				parsed["error"] = parsed["error_description"]
+			elif parsed.has("msg"):
+				parsed["error"] = parsed["msg"]
+			elif parsed.has("message"):
+				parsed["error"] = parsed["message"]
+			elif result != HTTPRequest.RESULT_SUCCESS:
+				parsed["error"] = "connection_failed"
+				parsed["message"] = "Could not reach server."
+			elif code == 0:
+				parsed["error"] = "connection_failed"
+				parsed["message"] = "Could not reach server."
 
 	if SimConstants.DEBUG_API:
 		if ok:

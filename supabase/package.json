@@ -1,0 +1,14 @@
+{
+  "name": "ever-dash-supabase-tools",
+  "version": "1.0.0",
+  "description": "Verification and setup script for Ever Dash Supabase backend",
+  "main": "setup.js",
+  "type": "module",
+  "scripts": {
+    "test": "node test.js",
+    "verify": "node setup.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.48.1"
+  }
+}

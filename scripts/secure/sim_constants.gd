@@ -26,11 +26,19 @@ const COIN_SCORE: int = 1
 const DISTANCE_SCORE_PER_UNIT: float = 0.0
 const LOCAL_SCORE_PER_SEC: float = 0.0
 
-# Local dev: http://localhost:8080 — GitHub Pages CI replaces this at export time.
+# Supabase Backend Configuration
+var SUPABASE_URL: String = "https://txcitxcptrrbdqevrzbi.supabase.co"
+var SUPABASE_ANON_KEY: String = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR4Y2l0eGNwdHJyYmRxZXZyemJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkzODk5OTYsImV4cCI6MjEwNDk2NTk5Nn0.flv4DKSdyOzxv6WIj_8bqcW7Kt1Ly0TmgN-MawrpWfc"
+
+# Legacy / optional custom API server (fallback)
 const API_BASE: String = ""
-const OFFLINE_FALLBACK: bool = false
-const DEBUG_API: bool = false
+const OFFLINE_FALLBACK: bool = true
+const DEBUG_API: bool = true
 const SECURE_SPAWNS: bool = true
+
+func has_supabase() -> bool:
+	return SUPABASE_URL.strip_edges() != "" and SUPABASE_ANON_KEY.strip_edges() != ""
+
 
 const SPAWN_Z: float = -50.0
 const SPAWN_LEAD: float = 55.0
@@ -53,14 +61,14 @@ const EXTRA_COIN_BURST_MIN: int = 10
 const EXTRA_COIN_BURST_MAX: int = 16
 
 
-static func scroll_speed_at_sec(elapsed_sec: float) -> float:
+func scroll_speed_at_sec(elapsed_sec: float) -> float:
 	if elapsed_sec < 0.0:
 		elapsed_sec = 0.0
 	var tier: int = int(floor(elapsed_sec / SPEED_RAMP_INTERVAL_SEC))
 	return SCROLL_SPEED + float(tier) * SPEED_RAMP_INCREMENT
 
 
-static func duration_ms_for_distance(distance: float) -> float:
+func duration_ms_for_distance(distance: float) -> float:
 	if distance <= 0.0:
 		return 0.0
 	var remaining: float = distance
@@ -78,7 +86,7 @@ static func duration_ms_for_distance(distance: float) -> float:
 	return ms
 
 
-static func distance_at_duration_ms(duration_ms: int) -> float:
+func distance_at_duration_ms(duration_ms: int) -> float:
 	if duration_ms <= 0:
 		return 0.0
 	var elapsed: float = float(duration_ms) / 1000.0
@@ -91,7 +99,7 @@ static func distance_at_duration_ms(duration_ms: int) -> float:
 	return dist
 
 
-static func duration_ms_for_distance_from_start(distance: float, start_elapsed_sec: float) -> float:
+func duration_ms_for_distance_from_start(distance: float, start_elapsed_sec: float) -> float:
 	if distance <= 0.0:
 		return 0.0
 	var remaining: float = distance

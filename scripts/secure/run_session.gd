@@ -139,16 +139,55 @@ func submit_checkpoint(final_distance: float) -> void:
 	})
 
 
-func submit_finish(final_distance: float, end_reason: String = "collision") -> void:
+func submit_finish(final_distance: float, end_reason: String = "collision", total_distance: float = -1.0) -> void:
 	var payload := MoveLog.to_dict(end_reason, final_distance)
-	if offline_mode:
-		_log("finish (offline): %s" % JSON.stringify(payload))
-		run_active = false
+	var duration: float = run_scroll_elapsed_sec()
+	
+	# Calculate total coins collected from move_log if not already counted
+	var coins_in_segment := _count_coins_in_payload(payload)
+	run_total_coins += coins_in_segment
+
+	var dist_meters: int = int(round(total_distance if total_distance >= 0.0 else final_distance))
+
+	# If Supabase is configured and player is logged in, submit to Supabase RPC
+	if SimConstants.has_supabase() and AuthSession.is_logged_in():
+		_log("Submitting finish to Supabase: dist=%dm coins=%d duration=%.1fs" % [dist_meters, run_total_coins, duration])
+		ApiClient.post_with_jwt("/v1/run/finish", {
+			"p_distance": dist_meters,
+			"p_duration_sec": duration,
+			"p_coins": run_total_coins,
+		})
 		return
-	_log("finish %s dist=%.1f payload=%s" % [end_reason, final_distance, JSON.stringify(payload)])
-	ApiClient.post_signed("/v1/run/finish", {
-		"run_id": run_id,
-		"move_log": payload,
+
+	# If custom API server is configured with HMAC session
+	if not offline_mode and SimConstants.API_BASE != "":
+		_log("finish %s dist=%.1f payload=%s" % [end_reason, final_distance, JSON.stringify(payload)])
+		ApiClient.post_signed("/v1/run/finish", {
+			"run_id": run_id,
+			"move_log": payload,
+		})
+		return
+
+	# Guest / Offline Mode
+	_log("finish (guest/offline): dist=%dm coins=%d" % [dist_meters, run_total_coins])
+	run_active = false
+	var is_new_best := dist_meters > AuthSession.best_distance
+	if is_new_best:
+		AuthSession.best_distance = dist_meters
+	if run_total_coins > AuthSession.best_coins:
+		AuthSession.best_coins = run_total_coins
+	if is_new_best or run_total_coins > AuthSession.best_coins:
+		AuthSession._persist()
+
+	finish_resolved.emit(true, {
+		"accepted": true,
+		"final_distance": dist_meters,
+		"best_distance": AuthSession.best_distance,
+		"final_coins": run_total_coins,
+		"best_coins": AuthSession.best_coins,
+		"rank": 0,
+		"is_new_best": is_new_best,
+		"guest": true,
 	})
 
 
@@ -204,16 +243,31 @@ func _on_api_response(path: String, success: bool, status: int, body: Dictionary
 		run_active = false
 		var accepted: bool = success and bool(body.get("accepted", false))
 		if accepted:
-			run_total_coins = int(body.get("final_coins", body.get("final_score", run_total_coins)))
-			AuthSession.best_coins = int(body.get("best_coins", AuthSession.best_coins))
+			var submitted_dist: int = int(body.get("submitted_distance", body.get("final_distance", 0)))
+			var best_dist: int = int(body.get("best_distance", AuthSession.best_distance))
+			run_total_coins = int(body.get("final_coins", body.get("submitted_coins", run_total_coins)))
+			var best_c: int = int(body.get("best_coins", AuthSession.best_coins))
+			var rank: int = int(body.get("rank", AuthSession.global_rank))
+			AuthSession.best_distance = best_dist
+			AuthSession.best_coins = best_c
+			AuthSession.global_rank = rank
 			AuthSession.profile_updated.emit(body)
-			_log("finish accepted coins=%d rank=%s" % [run_total_coins, str(body.get("rank", "?"))])
-			finish_resolved.emit(true, body)
+			_log("finish accepted dist=%dm coins=%d rank=%s" % [submitted_dist, run_total_coins, str(body.get("rank", "?"))])
+			var res := body.duplicate()
+			res["final_distance"] = submitted_dist
+			res["best_distance"] = best_dist
+			res["final_coins"] = run_total_coins
+			res["best_coins"] = best_c
+			res["rank"] = rank
+			finish_resolved.emit(true, res)
 		else:
 			var err_body := body.duplicate()
 			if not err_body.has("message"):
 				err_body["message"] = _format_finish_error(success, status, body)
 			_log("finish rejected: %s" % str(err_body))
+			err_body["best_distance"] = AuthSession.best_distance
+			err_body["final_coins"] = run_total_coins
+			err_body["best_coins"] = AuthSession.best_coins
 			finish_resolved.emit(false, err_body)
 
 

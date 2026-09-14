@@ -25,3 +25,8 @@ godot/
 .agents/
 commit.sh
 
+# Node.js / Supabase tools
+supabase/node_modules/
+.env
+
+
