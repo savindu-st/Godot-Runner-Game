@@ -9,6 +9,7 @@ echo "========================================================"
 echo ""
 echo ">>> [1/2] Running Godot GDScript Client Tests..."
 godot --headless --path . -s tests/test_auth_and_leaderboard.gd
+godot --headless --path . -s tests/test_standup.gd
 
 # 2. Run Node.js / Supabase Schema & API Tests
 echo ""

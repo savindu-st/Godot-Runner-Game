@@ -108,7 +108,8 @@ func _deferred_level_boot() -> void:
 		street_names = ["No Name"]
 		
 	if fence == null:
-		fence = preload("res://models/city/barrier_fence.tscn")
+		fence = preload(
+			"res://models/city/barrier_fence.tscn")
 	if asphalt_mat == null:
 		asphalt_mat = preload("res://models/road_city.tres")
 		

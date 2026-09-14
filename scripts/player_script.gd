@@ -35,6 +35,7 @@ var jump_anim: String = ""
 var slide_anim: String = ""
 var death_anim: String = ""
 var dance_anim: String = ""
+var stand_anim: String = ""
 var is_jumping: bool = false
 var is_sliding: bool = false
 var slide_timer: float = 0.0
@@ -632,8 +633,13 @@ func _enter_attract_mode() -> void:
 		_dist_sign.set_text("0m")
 	elif _dist_label:
 		_dist_label.text = "0m"
-	var idle_anim: String = dance_anim if dance_anim != "" else run_anim
-	_play_anim(idle_anim, true)
+	if stand_anim != "" and anim_player:
+		_play_anim(stand_anim, false, 0.0)
+		anim_player.seek(0.0, true)
+		anim_player.pause()
+	else:
+		var idle_anim: String = dance_anim if dance_anim != "" else run_anim
+		_play_anim(idle_anim, true)
 
 
 func _on_start_pressed() -> void:
@@ -658,13 +664,20 @@ func _on_start_pressed() -> void:
 	RunSession.mark_run_scroll_started()
 	if _start_overlay:
 		_start_overlay.visible = false
-	_play_anim(run_anim, true)
+	_play_anim(run_anim, true, 0.2)
 
 
 func _run_start_countdown() -> void:
 	if _countdown_label == null:
 		return
 	_countdown_label.visible = true
+	if stand_anim != "" and anim_player:
+		var s_anim: Animation = anim_player.get_animation(stand_anim)
+		var custom_speed: float = 1.0
+		# The 4 countdown steps take: 3 * 0.85 + 0.65 = 3.20 seconds total
+		if s_anim and s_anim.length > 0.0:
+			custom_speed = s_anim.length / 3.20
+		_play_anim(stand_anim, false, 0.1, custom_speed)
 	var steps: PackedStringArray = PackedStringArray(["3", "2", "1", "GO!"])
 	var step_colors := [
 		Color(1.0, 0.35, 0.25),  # "3" Coral red
@@ -960,6 +973,7 @@ func _bind_anims() -> void:
 	slide_anim = _find_anim(["slide", "duck", "roll"])
 	death_anim = _find_anim(["death", "fall"])
 	dance_anim = _find_anim(["danc", "dance"])
+	stand_anim = _find_anim(["standup", "stand_up", "standing up", "standing", "stand"])
 
 
 func _find_anim(keywords: Array) -> String:
@@ -971,13 +985,13 @@ func _find_anim(keywords: Array) -> String:
 	return ""
 
 
-func _play_anim(anim_name: String, loop: bool, blend_time: float = 0.15) -> void:
+func _play_anim(anim_name: String, loop: bool, blend_time: float = 0.15, custom_speed: float = 1.0) -> void:
 	if anim_name == "" or anim_player == null:
 		return
 	var anim: Animation = anim_player.get_animation(anim_name)
 	if anim:
 		anim.loop_mode = Animation.LOOP_LINEAR if loop else Animation.LOOP_NONE
-	anim_player.play(anim_name, blend_time)
+	anim_player.play(anim_name, blend_time, custom_speed)
 
 # --- input: swipe to change lane / jump, tap to restart ---------------------
 func _unhandled_input(event: InputEvent) -> void:
