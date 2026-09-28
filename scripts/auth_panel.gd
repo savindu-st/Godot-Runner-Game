@@ -144,7 +144,7 @@ func _action_button(parent: Control, text: String, col: Color) -> Button:
 	return btn
 
 
-func _field(parent: Control, placeholder: String, keyboard_type: int = LineEdit.KEYBOARD_TYPE_DEFAULT) -> LineEdit:
+func _field(parent: Control, placeholder: String, keyboard_type: LineEdit.VirtualKeyboardType = LineEdit.KEYBOARD_TYPE_DEFAULT) -> LineEdit:
 	var f := LineEdit.new()
 	parent.add_child(f)
 	f.placeholder_text = placeholder

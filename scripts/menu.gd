@@ -34,12 +34,13 @@ var _char_3d_root: Node3D
 var _char_model_instance: Node3D
 var _current_char_index: int = 0
 
-const HudSign = preload("res://scripts/hud_sign.gd")
-
 var _menu_name_label: Label
 var _menu_best_label: Label
 var _menu_name_sign: HudSign
 var _menu_best_sign: HudSign
+var _menu_coins_sign: HudSign
+var _store_panel: Control
+var _store_btn: Button
 var _play_wait_timer: Timer
 var _offline_name_field: LineEdit
 var _btn_font: int = 42
@@ -56,6 +57,8 @@ func _ready() -> void:
 	# Login opens via PLAY ("LOGIN TO PLAY") or Settings — not forced on load.
 	if not AuthSession.profile_updated.is_connected(_on_profile_updated):
 		AuthSession.profile_updated.connect(_on_profile_updated)
+	if not AuthSession.coins_changed.is_connected(_on_coins_changed):
+		AuthSession.coins_changed.connect(_on_coins_changed)
 	if not get_viewport().size_changed.is_connected(_layout_menu_top_bar):
 		get_viewport().size_changed.connect(_layout_menu_top_bar)
 	if not VersionCheck.update_required.is_connected(_on_update_required):
@@ -143,6 +146,7 @@ func _build_ui() -> void:
 	btn_col.add_theme_constant_override("separation", 14 if BrowserBridge.is_mobile_viewport() else 16)
 
 	_play_btn = _add_menu_button(btn_col, "PLAY", Color(0.16, 0.72, 0.4), _on_play)
+	_store_btn = _add_menu_button(btn_col, "STORE", Color(1.0, 0.68, 0.15), _show_store)
 	_characters_btn = _add_menu_button(btn_col, "CHARACTERS", Color(0.2, 0.5, 0.75), _show_char_selection)
 	_add_menu_button(btn_col, "LEADERBOARD", Color(1.0, 0.75, 0.2), _show_leaderboard)
 	_add_menu_button(btn_col, "SETTINGS", Color(0.28, 0.32, 0.42), _show_settings)
@@ -165,6 +169,9 @@ func _build_ui() -> void:
 	auth_layer.add_child(_leaderboard_panel)
 	_leaderboard_panel.request_open_auth.connect(_show_auth_panel)
 
+	_store_panel = load("res://scripts/store_panel.gd").new()
+	auth_layer.add_child(_store_panel)
+
 	_build_menu_top_bar()
 
 
@@ -181,6 +188,15 @@ func _build_menu_top_bar() -> void:
 	)
 	add_child(_menu_name_sign)
 	_menu_name_label = _menu_name_sign.label
+
+	_menu_coins_sign = HudSign.create_sign(HudSign.SignType.COIN, "0")
+	_menu_coins_sign.z_index = 20
+	_menu_coins_sign.mouse_filter = Control.MOUSE_FILTER_STOP
+	_menu_coins_sign.gui_input.connect(func(e: InputEvent):
+		if (e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT) or (e is InputEventScreenTouch and e.pressed):
+			_show_store()
+	)
+	add_child(_menu_coins_sign)
 
 	_menu_best_sign = HudSign.create_sign(HudSign.SignType.BEST, "Best 0")
 	_menu_best_sign.z_index = 20
@@ -210,7 +226,10 @@ func _layout_menu_top_bar() -> void:
 	var pad_right := maxf(BrowserBridge.popup_edge_margin() + 16.0, 24.0)
 	
 	_menu_name_sign.align_left(pad_left, top)
-	_menu_best_sign.align_right(width - pad_right, top)
+	if _menu_coins_sign:
+		_menu_coins_sign.align_right(width - pad_right, top)
+	if _menu_best_sign:
+		_menu_best_sign.align_right(width - pad_right, top + 46.0)
 
 
 func _refresh_menu_top_bar() -> void:
@@ -218,6 +237,8 @@ func _refresh_menu_top_bar() -> void:
 		return
 	var show_hud := true
 	_menu_name_sign.visible = show_hud
+	if _menu_coins_sign:
+		_menu_coins_sign.visible = show_hud
 	_menu_best_sign.visible = show_hud
 	if not show_hud:
 		return
@@ -228,13 +249,18 @@ func _refresh_menu_top_bar() -> void:
 		player_name = "Guest"
 	_menu_name_sign.set_text(player_name)
 	_menu_best_sign.set_text("Best %dm" % AuthSession.best_distance)
+	if _menu_coins_sign:
+		_menu_coins_sign.set_text("%d" % AuthSession.total_coins)
 	
 	var width := get_viewport().get_visible_rect().size.x
 	if width <= 0.0: width = 720.0
 	var pad_left := maxf(BrowserBridge.popup_edge_margin() + 16.0, 24.0)
 	var pad_right := maxf(BrowserBridge.popup_edge_margin() + 16.0, 24.0)
 	_menu_name_sign.align_left(pad_left, 22.0)
-	_menu_best_sign.align_right(width - pad_right, 22.0)
+	if _menu_coins_sign:
+		_menu_coins_sign.align_right(width - pad_right, 22.0)
+	if _menu_best_sign:
+		_menu_best_sign.align_right(width - pad_right, 68.0)
 
 
 func _menu_hud_label(align: HorizontalAlignment, color: Color) -> Label:
@@ -260,7 +286,7 @@ func _menu_hud_label(align: HorizontalAlignment, color: Color) -> Label:
 
 
 func _on_profile_updated(_body: Dictionary) -> void:
-	_refresh_menu_top_bar()
+	_refresh_auth_ui()
 
 
 func _build_settings_panel() -> void:
@@ -319,6 +345,7 @@ func _build_settings_panel() -> void:
 	# Local nickname option for offline mode
 	if true:
 		var name_label := Label.new()
+		name_label.name = "GuestNickLabel"
 		_settings_box.add_child(name_label)
 		name_label.text = "Set Guest Nickname:"
 		name_label.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font())
@@ -353,6 +380,7 @@ func _build_settings_panel() -> void:
 
 
 func _show_settings() -> void:
+	_hide_store()
 	_refresh_auth_ui()
 	var dim = get_node("SettingsDim")
 	dim.modulate.a = 0
@@ -382,6 +410,13 @@ func _refresh_auth_ui() -> void:
 		_login_btn.visible = not AuthSession.is_logged_in()
 	if _logout_btn:
 		_logout_btn.visible = AuthSession.is_logged_in()
+	if _offline_name_field:
+		_offline_name_field.visible = not AuthSession.is_logged_in()
+		if not AuthSession.is_logged_in():
+			_offline_name_field.text = AuthSession.username
+	var guest_lbl = _settings_box.get_node_or_null("GuestNickLabel") if _settings_box else null
+	if guest_lbl:
+		guest_lbl.visible = not AuthSession.is_logged_in()
 	if _play_btn:
 		_play_btn.disabled = false
 		_play_btn.text = "PLAY"
@@ -392,6 +427,7 @@ func _show_auth_panel() -> void:
 	_hide_settings()
 	_hide_overlay()
 	_hide_char_selection()
+	_hide_store()
 	if _leaderboard_panel and _leaderboard_panel.visible:
 		_leaderboard_panel.close()
 	if _auth_panel.has_method("open"):
@@ -404,6 +440,7 @@ func _show_leaderboard() -> void:
 	_hide_settings()
 	_hide_overlay()
 	_hide_char_selection()
+	_hide_store()
 	if _auth_panel and _auth_panel.visible:
 		if _auth_panel.has_method("close"):
 			_auth_panel.close()
@@ -411,6 +448,36 @@ func _show_leaderboard() -> void:
 			_auth_panel.visible = false
 	if _leaderboard_panel:
 		_leaderboard_panel.open()
+
+
+func _show_store() -> void:
+	_hide_settings()
+	_hide_overlay()
+	_hide_char_selection()
+	if _leaderboard_panel and _leaderboard_panel.visible:
+		_leaderboard_panel.close()
+	if _auth_panel and _auth_panel.visible:
+		if _auth_panel.has_method("close"):
+			_auth_panel.close()
+		else:
+			_auth_panel.visible = false
+	if _store_panel:
+		if _store_panel.has_method("open"):
+			_store_panel.open()
+		else:
+			_store_panel.visible = true
+
+
+func _hide_store() -> void:
+	if _store_panel:
+		if _store_panel.has_method("close"):
+			_store_panel.close()
+		else:
+			_store_panel.visible = false
+
+
+func _on_coins_changed(_new_total: int) -> void:
+	_refresh_menu_top_bar()
 
 
 func _on_logged_in() -> void:
@@ -684,6 +751,7 @@ func _build_char_selection() -> void:
 	select_btn.pressed.connect(_hide_char_selection)
 
 func _show_char_selection() -> void:
+	_hide_store()
 	_current_char_index = GameSettings.selected_character_index
 	if _current_char_index < 0 or _current_char_index >= 2:
 		_current_char_index = 0
@@ -891,6 +959,8 @@ func _is_mobile() -> bool:
 
 
 func _on_offline_name_changed(new_text: String) -> void:
+	if AuthSession.is_logged_in():
+		return
 	var clean_name = new_text.strip_edges()
 	AuthSession.set_auth({
 		"username": clean_name

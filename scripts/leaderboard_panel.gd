@@ -12,7 +12,6 @@ var _personal_label: Label
 var _personal_action_btn: Button
 var _refresh_btn: Button
 var _close_btn: Button
-var _loading_spinner: Label
 var _is_loading: bool = false
 var _top_scores: Array = []
 var _my_rank_data: Dictionary = {}

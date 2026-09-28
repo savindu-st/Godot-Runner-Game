@@ -1,7 +1,8 @@
-
 # Godot-specific ignores
 .import/
 export.cfg
+export_credentials.cfg
+*.translation
 
 # Godot 4 import cache
 .godot/
@@ -21,12 +22,37 @@ data_*/
 emsdk/
 godot/
 
-# Antigravity agents skills
+# Antigravity agents skills & local scripts
 .agents/
 commit.sh
 
+# Raw / external asset packages
+assets/kenney_*/
+
 # Node.js / Supabase tools
-supabase/node_modules/
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment and secrets
 .env
+.env.*
+!.env.example
 
+# Python cache & virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
 
+# Operating System & IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

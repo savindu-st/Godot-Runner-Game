@@ -48,6 +48,10 @@ assert(
   "Defines best_distance column on public.profiles"
 );
 assert(
+  schemaContent.includes("total_coins INT NOT NULL DEFAULT 0"),
+  "Defines total_coins column on public.profiles"
+);
+assert(
   schemaContent.includes("ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY"),
   "Enables Row Level Security (RLS) on profiles"
 );

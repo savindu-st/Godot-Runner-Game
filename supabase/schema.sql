@@ -14,9 +14,10 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
--- Ensure best_distance column exists if table was already created
+-- Ensure best_distance and total_coins columns exist if table was already created
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS best_distance INT NOT NULL DEFAULT 0;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS best_coins INT NOT NULL DEFAULT 0;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS total_coins INT NOT NULL DEFAULT 0;
 
 -- Index for instant distance leaderboard lookups
 CREATE INDEX IF NOT EXISTS idx_profiles_best_distance_desc 
@@ -66,8 +67,8 @@ BEGIN
         v_username := v_username || '_' || substring(NEW.id::text from 1 for 4);
     END IF;
 
-    INSERT INTO public.profiles (id, username, best_distance, best_coins, created_at, updated_at)
-    VALUES (NEW.id, v_username, 0, 0, now(), now())
+    INSERT INTO public.profiles (id, username, best_distance, best_coins, total_coins, created_at, updated_at)
+    VALUES (NEW.id, v_username, 0, 0, 0, now(), now())
     ON CONFLICT (id) DO UPDATE 
     SET username = EXCLUDED.username,
         updated_at = now();
@@ -100,6 +101,8 @@ DECLARE
     v_new_best_dist INT := 0;
     v_current_best_coins INT := 0;
     v_new_best_coins INT := 0;
+    v_current_total_coins INT := 0;
+    v_new_total_coins INT := 0;
     v_rank INT := 0;
     v_max_allowed_dist INT;
     v_now TIMESTAMPTZ := now();
@@ -127,18 +130,20 @@ BEGIN
     END IF;
 
     -- Get current records for this user
-    SELECT COALESCE(best_distance, 0), COALESCE(best_coins, 0)
-    INTO v_current_best_dist, v_current_best_coins
+    SELECT COALESCE(best_distance, 0), COALESCE(best_coins, 0), COALESCE(total_coins, 0)
+    INTO v_current_best_dist, v_current_best_coins, v_current_total_coins
     FROM public.profiles
     WHERE id = v_user_id;
 
     v_new_best_dist := GREATEST(v_current_best_dist, p_distance);
     v_new_best_coins := GREATEST(v_current_best_coins, p_coins);
+    v_new_total_coins := v_current_total_coins + p_coins;
 
     -- Atomically update profile
     UPDATE public.profiles
     SET best_distance = v_new_best_dist,
         best_coins = v_new_best_coins,
+        total_coins = v_new_total_coins,
         updated_at = v_now
     WHERE id = v_user_id;
 
@@ -153,6 +158,7 @@ BEGIN
         'best_distance', v_new_best_dist,
         'submitted_coins', p_coins,
         'best_coins', v_new_best_coins,
+        'total_coins', v_new_total_coins,
         'rank', v_rank,
         'is_new_best', (p_distance > v_current_best_dist)
     );
@@ -171,6 +177,7 @@ DECLARE
     v_username TEXT;
     v_best_dist INT := 0;
     v_best_coins INT := 0;
+    v_total_coins INT := 0;
     v_rank INT := 0;
 BEGIN
     v_user_id := auth.uid();
@@ -178,13 +185,13 @@ BEGIN
         RETURN jsonb_build_object('authenticated', false);
     END IF;
 
-    SELECT username, best_distance, best_coins 
-    INTO v_username, v_best_dist, v_best_coins
+    SELECT username, best_distance, best_coins, COALESCE(total_coins, 0)
+    INTO v_username, v_best_dist, v_best_coins, v_total_coins
     FROM public.profiles
     WHERE id = v_user_id;
 
     IF v_username IS NULL THEN
-        RETURN jsonb_build_object('authenticated', true, 'rank', 0, 'best_distance', 0, 'best_coins', 0);
+        RETURN jsonb_build_object('authenticated', true, 'rank', 0, 'best_distance', 0, 'best_coins', 0, 'total_coins', 0);
     END IF;
 
     -- Rank by distance
@@ -197,6 +204,7 @@ BEGIN
         'username', v_username,
         'best_distance', v_best_dist,
         'best_coins', v_best_coins,
+        'total_coins', v_total_coins,
         'rank', v_rank
     );
 END;
