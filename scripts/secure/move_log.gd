@@ -51,11 +51,12 @@ func log_jump_land(distance: float) -> void:
 	add_event("jump_land", {"distance": distance})
 
 
-func log_coin(object_id: int, lane: int, distance: float) -> void:
+func log_coin(object_id: int, lane: int, distance: float, value: int = 1) -> void:
 	add_event("coin", {
 		"object_id": object_id,
 		"lane": lane,
 		"distance": distance,
+		"value": value,
 	})
 
 

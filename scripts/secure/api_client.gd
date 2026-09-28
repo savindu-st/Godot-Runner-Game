@@ -128,6 +128,8 @@ func _full_url(path: String) -> String:
 			return supabase_base + path
 		if path == "/v1/auth/login":
 			return supabase_base + "/auth/v1/token?grant_type=password"
+		if path == "/v1/auth/refresh":
+			return supabase_base + "/auth/v1/token?grant_type=refresh_token"
 		if path == "/v1/auth/register" or path == "/v1/auth/signup":
 			return supabase_base + "/auth/v1/signup"
 		if path == "/v1/auth/me":

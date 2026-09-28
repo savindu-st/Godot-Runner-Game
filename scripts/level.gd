@@ -1,9 +1,9 @@
 extends Node
 
-@onready var player: CharacterBody3D = $player_body
-@onready var spawn_timer: Timer = $spawn_timer
-@onready var spawn_env_timer: Timer = $spawn_env_timer
-@onready var spawn_obstacle_timer: Timer = $spawn_obstacle_timer
+var player: CharacterBody3D = null
+@onready var spawn_timer: Timer = get_node_or_null("spawn_timer")
+@onready var spawn_env_timer: Timer = get_node_or_null("spawn_env_timer")
+@onready var spawn_obstacle_timer: Timer = get_node_or_null("spawn_obstacle_timer")
 
 @onready var coin: PackedScene = preload("res://scenes/coin.tscn")
 @export_group("Map Assets")
@@ -81,7 +81,10 @@ var _bgm_player: AudioStreamPlayer
 
 func _ready():
 	add_to_group("level")
-	spawn_env_timer.stop()
+	if player == null:
+		player = get_node_or_null("player_body")
+	if spawn_env_timer:
+		spawn_env_timer.stop()
 	_setup_bgm()
 	if not BrowserBridge.page_backgrounded.is_connected(_on_page_background):
 		BrowserBridge.page_backgrounded.connect(_on_page_background)
@@ -89,8 +92,10 @@ func _ready():
 		BrowserBridge.page_foregrounded.connect(_on_page_foreground)
 	randomize()
 	if SimConstants.SECURE_SPAWNS:
-		spawn_timer.stop()
-		spawn_obstacle_timer.stop()
+		if spawn_timer:
+			spawn_timer.stop()
+		if spawn_obstacle_timer:
+			spawn_obstacle_timer.stop()
 		if not RunSession.checkpoint_resolved.is_connected(_on_checkpoint_resolved):
 			RunSession.checkpoint_resolved.connect(_on_checkpoint_resolved)
 	call_deferred("_deferred_level_boot")
@@ -187,7 +192,10 @@ func get_segment_distance() -> float:
 
 
 func get_scroll_speed() -> float:
-	return SimConstants.scroll_speed_at_sec(RunSession.run_scroll_elapsed_sec())
+	var base := SimConstants.scroll_speed_at_sec(RunSession.run_scroll_elapsed_sec())
+	if is_instance_valid(player) and "rocket_timer" in player and player.rocket_timer > 0.0:
+		return base * 2.0
+	return base
 
 
 func _game_stopped() -> bool:
@@ -1150,8 +1158,11 @@ func _scroll_fences(delta: float, speed: float) -> void:
 func _physics_process(_delta: float) -> void:
 	if _game_stopped():
 		return
+	var tree := get_tree()
+	if tree == null:
+		return
 	var pp: Vector3 = player.global_transform.origin
-	for r in get_tree().get_nodes_in_group("obstacles"):
+	for r in tree.get_nodes_in_group("obstacles"):
 		if not is_instance_valid(r):
 			continue
 		var rp: Vector3 = r.global_transform.origin
@@ -1163,6 +1174,15 @@ func _physics_process(_delta: float) -> void:
 			else:
 				if pp.y >= JUMP_CLEAR_Y:
 					continue
+
+			# Power-Up mitigations: Rocket boost / invulnerability or shield absorption
+			if player.has_method("is_invulnerable") and player.is_invulnerable():
+				r.queue_free()
+				continue
+			if player.has_method("has_shield") and player.has_shield():
+				player.consume_shield()
+				r.queue_free()
+				continue
 
 			if SimConstants.SECURE_SPAWNS:
 				var oid: int = int(r.get_meta("object_id", -1))

@@ -8,9 +8,9 @@ const CHARACTER_MODELS: Array[PackedScene] = [
 ]
 const COIN_SFX: AudioStream = preload("res://sounds/coinpickup.wav")
 
-@onready var audio_player: AudioStreamPlayer = $CoinSFX
-@onready var death_audio: AudioStreamPlayer = $DeathSFX
-@onready var camera: Camera3D = $Camera3D
+@onready var audio_player: AudioStreamPlayer = get_node_or_null("CoinSFX")
+@onready var death_audio: AudioStreamPlayer = get_node_or_null("DeathSFX")
+@onready var camera: Camera3D = get_node_or_null("Camera3D")
 
 var shake_intensity: float = 0.0
 var anim_player: AnimationPlayer
@@ -83,6 +83,18 @@ var _lb_btn: Button
 var _auth_panel: Control
 var _leaderboard_panel: Control
 
+var magnet_timer: float = 0.0
+var shield_active: bool = false
+var rocket_timer: float = 0.0
+var doubler_timer: float = 0.0
+var invulnerable_timer: float = 0.0
+
+var _shield_mesh: MeshInstance3D
+var _shield_mat: StandardMaterial3D
+var _powerup_dock: Control
+var _powerup_slots: Dictionary = {}
+var _base_fov: float = 75.0
+
 const FINISH_WAIT_SEC: float = 22.0
 
 # swipe tracking
@@ -94,7 +106,8 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 
 	# rocks look for an area in this group to know they hit the player
-	$collision_area.add_to_group("player_skeleton")
+	if has_node("collision_area"):
+		$collision_area.add_to_group("player_skeleton")
 	call_deferred("_init_player")
 
 
@@ -111,9 +124,12 @@ func wait_for_character() -> void:
 func _init_player() -> void:
 	await _ensure_character()
 	ground_y = global_transform.origin.y
+	if camera:
+		_base_fov = camera.fov
 	_bind_anims()
 	_enter_attract_mode()
 	_setup_hud()
+	_setup_shield_mesh()
 	if not RunSession.checkpoint_resolved.is_connected(_on_checkpoint_resolved):
 		RunSession.checkpoint_resolved.connect(_on_checkpoint_resolved)
 	if not RunSession.finish_resolved.is_connected(_on_finish_resolved):
@@ -286,6 +302,7 @@ func _setup_hud() -> void:
 	_dist_label = _dist_sign.label
 
 	_setup_back_button(_hud_layer)
+	_setup_powerup_hud(_hud_layer)
 
 	# ---- full-screen game-over overlay (dim + centered card) ----
 	overlay = Control.new()
@@ -814,6 +831,19 @@ func _layout_hud_panels() -> void:
 	elif _dist_label:
 		_dist_label.position = Vector2(width - pad_right - 300.0, pad_top + (row_h + 4.0) * 2.0)
 
+	if _powerup_dock:
+		var height := get_viewport().get_visible_rect().size.y
+		if height <= 0.0:
+			height = float(get_viewport().size.y)
+		if height <= 0.0:
+			height = 1280.0
+		var dock_w := 260.0
+		var dock_h := 68.0
+		var dock_x := (width - dock_w) / 2.0
+		var dock_y := height - dock_h - 16.0
+		_powerup_dock.position = Vector2(dock_x, dock_y)
+		_powerup_dock.size = Vector2(dock_w, dock_h)
+
 
 func _refresh_coin_hud() -> void:
 	if _coin_sign:
@@ -821,7 +851,8 @@ func _refresh_coin_hud() -> void:
 		if _coin_sign.get_text() != current_str:
 			_coin_sign.set_text(current_str)
 			_coin_sign.bounce(1.35)
-			_spawn_floating_coin_popup("+1")
+			var pop_text: String = "+2" if doubler_timer > 0.0 else "+1"
+			_spawn_floating_coin_popup(pop_text)
 		else:
 			_coin_sign.set_text(current_str)
 		var width := get_viewport().get_visible_rect().size.x
@@ -1009,6 +1040,17 @@ func _unhandled_input(event: InputEvent) -> void:
 	if game_over or not game_started:
 		return
 
+	if event is InputEventKey and event.pressed and not event.echo:
+		match event.keycode:
+			KEY_1:
+				_try_activate_powerup("coin_magnet")
+			KEY_2:
+				_try_activate_powerup("shield")
+			KEY_3:
+				_try_activate_powerup("rocket_boost")
+			KEY_4:
+				_try_activate_powerup("coin_doubler")
+
 	if event is InputEventScreenTouch:
 		if event.pressed:
 			_touch_start = event.position
@@ -1136,6 +1178,48 @@ func _physics_process(delta: float) -> void:
 	if not game_started:
 		return
 
+	# Power-up timer countdowns
+	if magnet_timer > 0.0:
+		magnet_timer = maxf(0.0, magnet_timer - delta)
+	if rocket_timer > 0.0:
+		rocket_timer = maxf(0.0, rocket_timer - delta)
+	if doubler_timer > 0.0:
+		doubler_timer = maxf(0.0, doubler_timer - delta)
+	if invulnerable_timer > 0.0:
+		invulnerable_timer = maxf(0.0, invulnerable_timer - delta)
+
+	if magnet_timer > 0.0 or rocket_timer > 0.0 or doubler_timer > 0.0:
+		_update_powerup_dock()
+
+	if shield_active and _shield_mesh:
+		_shield_mesh.rotate_y(2.0 * delta)
+
+	if invulnerable_timer > 0.0:
+		var blink := fmod(invulnerable_timer, 0.2) < 0.1
+		if _character_model:
+			_character_model.visible = blink
+	elif _character_model and not _character_model.visible and not is_dead:
+		_character_model.visible = true
+
+	# Magnet / Rocket coin attraction
+	if magnet_timer > 0.0 or rocket_timer > 0.0:
+		var pull_radius: float = 26.0 if rocket_timer > 0.0 else 18.0
+		var pull_radius_sq: float = pull_radius * pull_radius
+		var pp := global_transform.origin
+		for coin in get_tree().get_nodes_in_group("coins"):
+			if not is_instance_valid(coin) or coin.get("_collected"):
+				continue
+			var cp: Vector3 = coin.global_transform.origin
+			var diff := cp - pp
+			if diff.length_squared() < pull_radius_sq:
+				var pull_speed: float = 24.0 if rocket_timer > 0.0 else 16.0
+				coin.global_transform.origin = cp.move_toward(pp, pull_speed * delta)
+
+	# Rocket camera FOV punch
+	if camera:
+		var target_fov: float = _base_fov + 8.0 if rocket_timer > 0.0 else _base_fov
+		camera.fov = move_toward(camera.fov, target_fov, 24.0 * delta)
+
 	# keyboard fallback so it's also playable on desktop
 	if Input.is_action_just_pressed("move_left") or Input.is_action_just_pressed("ui_left"):
 		_change_lane(-1)
@@ -1182,18 +1266,26 @@ func _physics_process(delta: float) -> void:
 			_play_anim(run_anim, true)
 	slide_requested = false
 
-	# gravity + vertical move (no floor collider, handled manually)
-	vertical_velocity -= GRAVITY * delta
-	pos.y += vertical_velocity * delta
-	if pos.y <= ground_y:
-		pos.y = ground_y
+	# Rocket hover vs normal gravity + vertical move
+	if rocket_timer > 0.0:
+		pos.y = move_toward(pos.y, ground_y + 1.2, 8.0 * delta)
 		vertical_velocity = 0.0
 		if is_jumping:
 			is_jumping = false
-			var level := get_tree().get_first_node_in_group("level")
-			if level and level.has_method("get_segment_distance"):
-				MoveLog.log_jump_land(level.get_segment_distance())
 			_transition_to_run_after_jump()
+	else:
+		# gravity + vertical move (no floor collider, handled manually)
+		vertical_velocity -= GRAVITY * delta
+		pos.y += vertical_velocity * delta
+		if pos.y <= ground_y:
+			pos.y = ground_y
+			vertical_velocity = 0.0
+			if is_jumping:
+				is_jumping = false
+				var level := get_tree().get_first_node_in_group("level")
+				if level and level.has_method("get_segment_distance"):
+					MoveLog.log_jump_land(level.get_segment_distance())
+				_transition_to_run_after_jump()
 
 	global_transform.origin = pos
 
@@ -1201,6 +1293,14 @@ func die() -> void:
 	if is_dead:
 		return
 	is_dead = true
+	magnet_timer = 0.0
+	shield_active = false
+	rocket_timer = 0.0
+	doubler_timer = 0.0
+	invulnerable_timer = 0.0
+	if _shield_mesh:
+		_shield_mesh.visible = false
+	_update_powerup_dock()
 	shake_camera(0.8)
 	var hitbox: Area3D = $collision_area
 	hitbox.monitoring = false
@@ -1237,12 +1337,17 @@ func _start_death() -> void:
 			AuthSession.best_distance = current_dist
 		if coin_count > AuthSession.best_coins:
 			AuthSession.best_coins = coin_count
-		AuthSession._persist()
+		if not RunSession.coins_awarded_for_run:
+			RunSession.coins_awarded_for_run = true
+			AuthSession.add_coins(coin_count)
+		elif is_new or coin_count > AuthSession.best_coins:
+			AuthSession._persist()
 		_finish_data = {
 			"final_distance": current_dist,
 			"best_distance": AuthSession.best_distance,
 			"final_coins": coin_count,
 			"best_coins": AuthSession.best_coins,
+			"total_coins": AuthSession.total_coins,
 			"is_new_best": is_new,
 		}
 		_show_game_over_loading()
@@ -1333,7 +1438,8 @@ func _trigger_game_over() -> void:
 		display_coins = int(_finish_data["final_coins"])
 
 	lines.append("Distance: %dm" % display_distance)
-	lines.append("Coins: %d" % display_coins)
+	lines.append("Coins: +%d" % display_coins)
+	lines.append("Total Coins: %d" % AuthSession.total_coins)
 
 	var is_new_best: bool = bool(_finish_data.get("is_new_best", false)) or (display_distance > AuthSession.best_distance)
 
@@ -1367,14 +1473,15 @@ func _on_collision_area_entered(area) -> void:
 	var parent = area.get_parent()
 	if parent.is_in_group("coins"):
 		_play_coin_sfx()
-		coin_count += 1
+		var coin_val: int = 2 if doubler_timer > 0.0 else 1
+		coin_count += coin_val
 		_refresh_coin_hud()
 		var level := get_tree().get_first_node_in_group("level")
 		if level and level.has_method("get_segment_distance"):
 			var oid: int = int(parent.get_meta("object_id", -1))
 			var lane: int = int(parent.get_meta("spawn_lane", current_lane))
 			var dist: float = float(parent.get_meta("map_distance", level.get_segment_distance()))
-			MoveLog.log_coin(oid, lane, dist)
+			MoveLog.log_coin(oid, lane, dist, coin_val)
 		if parent.has_method("collect"):
 			parent.collect()
 		else:
@@ -1389,3 +1496,238 @@ func _play_coin_sfx() -> void:
 	if OS.has_feature("web"):
 		BrowserBridge.unlock_web_audio()
 	audio_player.play()
+
+
+func is_invulnerable() -> bool:
+	return rocket_timer > 0.0 or invulnerable_timer > 0.0
+
+
+func has_shield() -> bool:
+	return shield_active
+
+
+func consume_shield() -> void:
+	shield_active = false
+	invulnerable_timer = 1.5
+	if _shield_mesh:
+		_shield_mesh.visible = false
+	shake_camera(0.6)
+	_spawn_floating_coin_popup("SHIELD BROKE!")
+	_update_powerup_dock()
+
+
+func _try_activate_powerup(id: String) -> void:
+	if not game_started or is_dead or dying or game_over:
+		return
+	if id == "shield" and shield_active:
+		_spawn_floating_coin_popup("Shield already ON!")
+		return
+	if AuthSession.get_powerup_count(id) <= 0:
+		_spawn_floating_coin_popup("0 Owned - Buy in Store!")
+		return
+	if AuthSession.use_powerup(id):
+		activate_powerup(id)
+
+
+func activate_powerup(id: String) -> void:
+	match id:
+		"coin_magnet":
+			magnet_timer = 15.0
+			_spawn_floating_coin_popup("🧲 MAGNET ON!")
+			if audio_player and audio_player.stream:
+				_play_coin_sfx()
+		"shield":
+			shield_active = true
+			if _shield_mesh:
+				_shield_mesh.visible = true
+			_spawn_floating_coin_popup("🛡️ SHIELD ON!")
+		"rocket_boost":
+			rocket_timer = 7.0
+			shake_camera(0.4)
+			_spawn_floating_coin_popup("🚀 ROCKET BOOST!")
+		"coin_doubler":
+			doubler_timer = 20.0
+			_spawn_floating_coin_popup("✖️2 MULTIPLIER!")
+	_update_powerup_dock()
+
+
+func _setup_shield_mesh() -> void:
+	if _shield_mesh != null:
+		return
+	_shield_mesh = MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.95
+	sphere.height = 1.9
+	_shield_mesh.mesh = sphere
+	_shield_mesh.position = Vector3(0, 0.95, 0)
+	
+	_shield_mat = StandardMaterial3D.new()
+	_shield_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_shield_mat.albedo_color = Color(0.15, 0.8, 1.0, 0.35)
+	_shield_mat.emission_enabled = true
+	_shield_mat.emission = Color(0.0, 0.9, 1.0)
+	_shield_mat.emission_energy_multiplier = 1.5
+	_shield_mat.rim_enabled = true
+	_shield_mat.rim = 0.8
+	_shield_mesh.material_override = _shield_mat
+	_shield_mesh.visible = false
+	add_child(_shield_mesh)
+
+
+func _setup_powerup_hud(parent: Node) -> void:
+	if _powerup_dock != null:
+		return
+	_powerup_dock = PanelContainer.new()
+	_powerup_dock.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
+	var dock_style := StyleBoxFlat.new()
+	dock_style.bg_color = Color(0.04, 0.06, 0.1, 0.82)
+	dock_style.set_corner_radius_all(14)
+	dock_style.border_color = Color(0.25, 0.4, 0.6, 0.8)
+	dock_style.set_border_width_all(2)
+	dock_style.content_margin_left = 6
+	dock_style.content_margin_right = 6
+	dock_style.content_margin_top = 6
+	dock_style.content_margin_bottom = 6
+	_powerup_dock.add_theme_stylebox_override("panel", dock_style)
+	parent.add_child(_powerup_dock)
+
+	var hbox := HBoxContainer.new()
+	hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hbox.add_theme_constant_override("separation", 8)
+	_powerup_dock.add_child(hbox)
+
+	var items = [
+		{"id": "coin_magnet", "icon": "🧲", "key": "1", "name": "MAGNET"},
+		{"id": "shield", "icon": "🛡️", "key": "2", "name": "SHIELD"},
+		{"id": "rocket_boost", "icon": "🚀", "key": "3", "name": "ROCKET"},
+		{"id": "coin_doubler", "icon": "✖️2", "key": "4", "name": "2X"},
+	]
+
+	for item in items:
+		var slot := _create_powerup_slot(item["id"], item["icon"], item["key"], item["name"])
+		hbox.add_child(slot)
+		_powerup_slots[item["id"]] = slot
+
+	if not AuthSession.inventory_changed.is_connected(_update_powerup_dock):
+		AuthSession.inventory_changed.connect(_update_powerup_dock)
+
+	_update_powerup_dock()
+
+
+func _create_powerup_slot(id: String, icon: String, key_num: String, _short_name: String) -> Button:
+	var btn := Button.new()
+	btn.custom_minimum_size = Vector2(56, 56)
+	btn.mouse_filter = Control.MOUSE_FILTER_STOP
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+
+	var normal_sb := StyleBoxFlat.new()
+	normal_sb.bg_color = Color(0.1, 0.15, 0.22, 0.9)
+	normal_sb.set_corner_radius_all(10)
+	normal_sb.set_border_width_all(2)
+	normal_sb.border_color = Color(0.3, 0.45, 0.65, 0.8)
+	btn.add_theme_stylebox_override("normal", normal_sb)
+	
+	var hover_sb := normal_sb.duplicate()
+	hover_sb.border_color = Color(0.4, 0.7, 1.0, 1.0)
+	btn.add_theme_stylebox_override("hover", hover_sb)
+	
+	var pressed_sb := normal_sb.duplicate()
+	pressed_sb.bg_color = Color(0.18, 0.26, 0.38, 0.95)
+	btn.add_theme_stylebox_override("pressed", pressed_sb)
+
+	var font = HudSign.get_hud_font()
+
+	var vbox := VBoxContainer.new()
+	vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_theme_constant_override("separation", 1)
+	btn.add_child(vbox)
+
+	var icon_label := Label.new()
+	icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	icon_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon_label.text = icon
+	icon_label.add_theme_font_size_override("font_size", 18)
+	vbox.add_child(icon_label)
+
+	var status_label := Label.new()
+	status_label.name = "StatusLabel"
+	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if font:
+		status_label.add_theme_font_override("font", font)
+	status_label.add_theme_font_size_override("font_size", 11)
+	status_label.add_theme_color_override("font_color", Color(0.9, 0.95, 1.0))
+	status_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	status_label.add_theme_constant_override("outline_size", 4)
+	status_label.text = "[%s]" % key_num
+	vbox.add_child(status_label)
+
+	btn.pressed.connect(func(): _try_activate_powerup(id))
+	return btn
+
+
+func _update_powerup_dock() -> void:
+	if _powerup_dock == null:
+		return
+	var is_visible: bool = game_started and not is_dead and not dying and not game_over
+	_powerup_dock.visible = is_visible
+	if not is_visible:
+		return
+
+	for id in _powerup_slots.keys():
+		var slot: Button = _powerup_slots[id]
+		var count: int = AuthSession.get_powerup_count(id)
+		var status_label: Label = slot.find_child("StatusLabel", true, false)
+		var key_num := "1"
+		match id:
+			"coin_magnet": key_num = "1"
+			"shield": key_num = "2"
+			"rocket_boost": key_num = "3"
+			"coin_doubler": key_num = "4"
+
+		var is_active: bool = false
+		var active_str: String = ""
+		match id:
+			"coin_magnet":
+				if magnet_timer > 0.0:
+					is_active = true
+					active_str = "%ds" % int(ceilf(magnet_timer))
+			"shield":
+				if shield_active:
+					is_active = true
+					active_str = "ON"
+			"rocket_boost":
+				if rocket_timer > 0.0:
+					is_active = true
+					active_str = "%ds" % int(ceilf(rocket_timer))
+			"coin_doubler":
+				if doubler_timer > 0.0:
+					is_active = true
+					active_str = "%ds" % int(ceilf(doubler_timer))
+
+		var normal_sb: StyleBoxFlat = slot.get_theme_stylebox("normal")
+		if normal_sb:
+			if is_active:
+				normal_sb.border_color = Color(1.0, 0.85, 0.2, 1.0)
+				normal_sb.bg_color = Color(0.2, 0.25, 0.1, 0.95)
+			elif count > 0:
+				normal_sb.border_color = Color(0.3, 0.6, 0.9, 0.85)
+				normal_sb.bg_color = Color(0.1, 0.15, 0.22, 0.9)
+			else:
+				normal_sb.border_color = Color(0.3, 0.35, 0.4, 0.4)
+				normal_sb.bg_color = Color(0.08, 0.1, 0.13, 0.6)
+
+		if status_label:
+			if is_active:
+				status_label.text = active_str
+				status_label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.2))
+			elif count > 0:
+				status_label.text = "[%s] x%d" % [key_num, count]
+				status_label.add_theme_color_override("font_color", Color(0.9, 0.95, 1.0))
+			else:
+				status_label.text = "[%s] 0" % key_num
+				status_label.add_theme_color_override("font_color", Color(0.6, 0.65, 0.7))

@@ -10,6 +10,7 @@ var run_id: String = ""
 var segment_index: int = 0
 var current_seed: int = 0
 var run_total_coins: int = 0
+var coins_awarded_for_run: bool = false
 var offline_mode: bool = true
 var run_active: bool = false
 var run_scroll_start_ms: int = -1
@@ -70,6 +71,7 @@ func _reset_online_state() -> void:
 	run_id = ""
 	segment_index = 0
 	run_total_coins = 0
+	coins_awarded_for_run = false
 	_waiting_checkpoint = false
 	_clear_run_scroll_clock()
 
@@ -82,6 +84,7 @@ func _start_offline_run(error_hint: String) -> void:
 	segment_index = 0
 	current_seed = _random_segment_seed()
 	run_total_coins = 0
+	coins_awarded_for_run = false
 	run_active = true
 	_clear_run_scroll_clock()
 	if error_hint != "":
@@ -176,7 +179,10 @@ func submit_finish(final_distance: float, end_reason: String = "collision", tota
 		AuthSession.best_distance = dist_meters
 	if run_total_coins > AuthSession.best_coins:
 		AuthSession.best_coins = run_total_coins
-	if is_new_best or run_total_coins > AuthSession.best_coins:
+	if not coins_awarded_for_run:
+		coins_awarded_for_run = true
+		AuthSession.add_coins(run_total_coins)
+	elif is_new_best or run_total_coins > AuthSession.best_coins:
 		AuthSession._persist()
 
 	finish_resolved.emit(true, {
@@ -185,6 +191,7 @@ func submit_finish(final_distance: float, end_reason: String = "collision", tota
 		"best_distance": AuthSession.best_distance,
 		"final_coins": run_total_coins,
 		"best_coins": AuthSession.best_coins,
+		"total_coins": AuthSession.total_coins,
 		"rank": 0,
 		"is_new_best": is_new_best,
 		"guest": true,
@@ -251,6 +258,13 @@ func _on_api_response(path: String, success: bool, status: int, body: Dictionary
 			AuthSession.best_distance = best_dist
 			AuthSession.best_coins = best_c
 			AuthSession.global_rank = rank
+			if body.has("total_coins"):
+				AuthSession.total_coins = int(body["total_coins"])
+				AuthSession.coins_changed.emit(AuthSession.total_coins)
+			elif not coins_awarded_for_run:
+				coins_awarded_for_run = true
+				AuthSession.add_coins(run_total_coins)
+			AuthSession.persist()
 			AuthSession.profile_updated.emit(body)
 			_log("finish accepted dist=%dm coins=%d rank=%s" % [submitted_dist, run_total_coins, str(body.get("rank", "?"))])
 			var res := body.duplicate()
@@ -258,6 +272,7 @@ func _on_api_response(path: String, success: bool, status: int, body: Dictionary
 			res["best_distance"] = best_dist
 			res["final_coins"] = run_total_coins
 			res["best_coins"] = best_c
+			res["total_coins"] = AuthSession.total_coins
 			res["rank"] = rank
 			finish_resolved.emit(true, res)
 		else:
@@ -305,7 +320,7 @@ func _count_coins_in_payload(payload: Dictionary) -> int:
 	var coins: int = 0
 	for e in payload.get("events", []):
 		if e is Dictionary and e.get("kind", "") == "coin":
-			coins += 1
+			coins += int(e.get("value", 1))
 	return coins
 
 

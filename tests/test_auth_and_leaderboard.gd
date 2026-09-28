@@ -9,6 +9,7 @@ var sim_constants: Node
 var auth_session: Node
 var api_client: Node
 var run_session: Node
+var browser_bridge: Node
 
 
 func _init() -> void:
@@ -21,6 +22,7 @@ func _run_all_tests() -> void:
 	auth_session = root.get_node_or_null("AuthSession")
 	api_client = root.get_node_or_null("ApiClient")
 	run_session = root.get_node_or_null("RunSession")
+	browser_bridge = root.get_node_or_null("BrowserBridge")
 
 	print("\n========================================================")
 	print("   Ever Dash: Auth & Leaderboard Automated Tests")
@@ -33,6 +35,8 @@ func _run_all_tests() -> void:
 	_test_run_session_guest_finish()
 	_test_auth_panel_component()
 	_test_leaderboard_panel_component()
+	_test_coin_persistence_and_store()
+	_test_powerups_and_mechanics()
 
 	print("\n========================================================")
 	if failed == 0:
@@ -52,6 +56,15 @@ func _assert_true(condition: bool, test_name: String) -> void:
 	else:
 		failed += 1
 		print("  ❌ FAIL: %s" % test_name)
+
+
+func _assert_false(condition: bool, test_name: String) -> void:
+	if not condition:
+		passed += 1
+		print("  ✅ PASS: %s" % test_name)
+	else:
+		failed += 1
+		print("  ❌ FAIL: %s (Expected false, got true)" % test_name)
 
 
 func _assert_eq(actual, expected, test_name: String) -> void:
@@ -99,6 +112,8 @@ func _test_auth_session() -> void:
 	# Test set_auth with Supabase response payload
 	var mock_supabase_response := {
 		"access_token": "mock.jwt.token",
+		"refresh_token": "mock.refresh.token.999",
+		"expires_in": 3600,
 		"token_type": "bearer",
 		"user": {
 			"id": "uuid-1234-5678",
@@ -115,6 +130,8 @@ func _test_auth_session() -> void:
 
 	_assert_eq(auth_session.is_logged_in(), true, "is_logged_in returns true after set_auth")
 	_assert_eq(auth_session.token, "mock.jwt.token", "token correctly stored")
+	_assert_eq(auth_session.refresh_token, "mock.refresh.token.999", "refresh_token correctly stored")
+	_assert_true(auth_session.expires_at > 0, "expires_at calculated from expires_in")
 	_assert_eq(auth_session.user_id, "uuid-1234-5678", "user_id UUID correctly stored")
 	_assert_eq(auth_session.email, "runner@example.com", "email correctly stored")
 	_assert_eq(auth_session.username, "SpeedyDash", "username extracted from user_metadata")
@@ -122,12 +139,36 @@ func _test_auth_session() -> void:
 	_assert_eq(auth_session.best_coins, 350, "best_coins correctly stored")
 	_assert_eq(auth_session.global_rank, 5, "global_rank correctly stored")
 
+	# Test session persistence & restore across game restarts
+	var raw_storage := str(browser_bridge.storage_get(auth_session.STORAGE_KEY))
+	_assert_true(raw_storage != "", "Session payload persisted to BrowserBridge storage")
+	var parsed_stored = JSON.parse_string(raw_storage)
+	_assert_true(parsed_stored is Dictionary, "Stored session parses as Dictionary")
+	_assert_eq(parsed_stored.get("token", ""), "mock.jwt.token", "Stored token matches")
+	_assert_eq(parsed_stored.get("refresh_token", ""), "mock.refresh.token.999", "Stored refresh_token matches")
+	_assert_eq(parsed_stored.get("username", ""), "SpeedyDash", "Stored username matches")
+
+	# Simulate clean engine restart: reset in-memory state, then restore from storage
+	auth_session.token = ""
+	auth_session.refresh_token = ""
+	auth_session.username = "Guest"
+	auth_session.best_distance = 0
+	_assert_eq(auth_session.is_logged_in(), false, "Memory state cleared for reload test")
+	auth_session._restore_from_storage()
+	_assert_eq(auth_session.is_logged_in(), true, "User stays signed in after restoring from storage")
+	_assert_eq(auth_session.token, "mock.jwt.token", "Restored token matches")
+	_assert_eq(auth_session.refresh_token, "mock.refresh.token.999", "Restored refresh_token matches")
+	_assert_eq(auth_session.username, "SpeedyDash", "Restored username matches")
+	_assert_eq(auth_session.best_distance, 1420, "Restored best_distance matches")
+
 	# Test clear (logout)
 	auth_session.clear()
 	_assert_eq(auth_session.is_logged_in(), false, "is_logged_in is false after clear")
 	_assert_eq(auth_session.token, "", "token is empty after clear")
+	_assert_eq(auth_session.refresh_token, "", "refresh_token is empty after clear")
 	_assert_eq(auth_session.username, "Guest", "username resets to Guest after clear")
 	_assert_eq(auth_session.best_distance, 0, "best_distance resets to 0 after clear")
+	_assert_eq(str(browser_bridge.storage_get(auth_session.STORAGE_KEY)), "", "Storage cleared after logout")
 
 
 # -----------------------------------------------------------------------------
@@ -151,6 +192,9 @@ func _test_api_client_routing() -> void:
 
 	var login_url = api_client._full_url("/v1/auth/login")
 	_assert_eq(login_url, "https://xyz123.supabase.co/auth/v1/token?grant_type=password", "Maps /v1/auth/login to Supabase token endpoint")
+
+	var refresh_url = api_client._full_url("/v1/auth/refresh")
+	_assert_eq(refresh_url, "https://xyz123.supabase.co/auth/v1/token?grant_type=refresh_token", "Maps /v1/auth/refresh to Supabase refresh token endpoint")
 
 	var register_url = api_client._full_url("/v1/auth/register")
 	_assert_eq(register_url, "https://xyz123.supabase.co/auth/v1/signup", "Maps /v1/auth/register to Supabase signup endpoint")
@@ -303,3 +347,191 @@ func _test_leaderboard_panel_component() -> void:
 	# Clean up
 	auth_session.clear()
 	lb.queue_free()
+
+
+# -----------------------------------------------------------------------------
+# 8. Total Coins Persistence & Store Component Tests
+# -----------------------------------------------------------------------------
+func _test_coin_persistence_and_store() -> void:
+	print("\n[Test Group 8] Total Coins Persistence & Store Menu")
+	
+	# Initial wallet balance
+	auth_session.clear()
+	_assert_eq(auth_session.total_coins, 0, "Default total_coins is 0")
+
+	# Test add_coins
+	var coin_signal_box := {
+		"received": false,
+		"val": 0
+	}
+	var on_coins := func(val: int):
+		coin_signal_box["received"] = true
+		coin_signal_box["val"] = val
+	auth_session.coins_changed.connect(on_coins)
+
+	auth_session.add_coins(50)
+	_assert_eq(auth_session.total_coins, 50, "add_coins(50) updates total_coins to 50")
+	_assert_true(coin_signal_box["received"], "coins_changed signal emitted on add_coins")
+	_assert_eq(coin_signal_box["val"], 50, "coins_changed signal payload matches total_coins")
+
+	# Test spend_coins
+	var spend_ok: bool = auth_session.spend_coins(20)
+	_assert_true(spend_ok, "spend_coins(20) succeeds with 50 coins available")
+	_assert_eq(auth_session.total_coins, 30, "total_coins updated to 30 after spend_coins")
+
+	var spend_fail: bool = auth_session.spend_coins(100)
+	_assert_eq(spend_fail, false, "spend_coins(100) returns false when balance insufficient")
+	_assert_eq(auth_session.total_coins, 30, "total_coins remains unchanged after failed spend")
+
+	auth_session.coins_changed.disconnect(on_coins)
+
+	# Test guest local storage persistence
+	auth_session._persist()
+	auth_session.total_coins = 0
+	_assert_eq(auth_session.total_coins, 0, "Cleared in-memory total_coins for reload test")
+	auth_session._restore_from_storage()
+	_assert_eq(auth_session.total_coins, 30, "Guest total_coins correctly restored from local storage")
+
+	# Test RunSession finish awarding coins
+	run_session.prepare_run()
+	run_session.run_total_coins = 25
+	run_session.submit_finish(200.0, "collision")
+	_assert_eq(auth_session.total_coins, 55, "RunSession finish increments total_coins (30 + 25 = 55)")
+
+	# Test StorePanel UI Component
+	var store = load("res://scripts/store_panel.gd").new()
+	root.add_child(store)
+
+	_assert_eq(store._title_label.text, "POWER-UP STORE", "Store title is correct")
+	_assert_true(store._powerup_items.size() >= 4, "Store has at least 4 default power-ups")
+	_assert_eq(store._powerup_items[0]["id"], "coin_magnet", "First item is Coin Magnet")
+
+	store.open()
+	_assert_eq(store.visible, true, "Store is visible after open()")
+	_assert_true(store._coins_sign.label.text.contains("55"), "Store displays live total coins balance")
+
+	store.close(true)
+	_assert_eq(store.visible, false, "Store visible is false after close()")
+
+	# Clean up
+	store.queue_free()
+	auth_session.clear()
+
+
+func _test_powerups_and_mechanics() -> void:
+	print("\n[Test Group 9] Power-Up 50x Pricing, Inventory & Gameplay Mechanics")
+	auth_session.clear()
+	auth_session.total_coins = 0
+
+	var store = load("res://scripts/store_panel.gd").new()
+	root.add_child(store)
+
+	# Verify exact 50x prices
+	var prices := {}
+	for item in store._powerup_items:
+		prices[item["id"]] = item["price"]
+
+	_assert_eq(prices.get("coin_magnet", 0), 5000, "Coin Magnet price is 5000 (50x of 100)")
+	_assert_eq(prices.get("shield", 0), 7500, "Energy Shield price is 7500 (50x of 150)")
+	_assert_eq(prices.get("rocket_boost", 0), 12500, "Rocket Boost price is 12500 (50x of 250)")
+	_assert_eq(prices.get("coin_doubler", 0), 10000, "2X Multiplier price is 10000 (50x of 200)")
+
+	# Attempt purchase with 0 coins
+	_assert_false(store.buy_item("coin_magnet"), "Cannot buy Coin Magnet with 0 coins")
+	_assert_eq(auth_session.get_powerup_count("coin_magnet"), 0, "Inventory count is 0 after failed purchase")
+
+	# Add coins and purchase items
+	auth_session.add_coins(25000)
+	_assert_eq(auth_session.total_coins, 25000, "Total coins credited to 25000")
+
+	# Buy Coin Magnet (5000)
+	_assert_true(store.buy_item("coin_magnet"), "Successfully bought Coin Magnet for 5000")
+	_assert_eq(auth_session.total_coins, 20000, "Total coins reduced to 20000 after buying Magnet")
+	_assert_eq(auth_session.get_powerup_count("coin_magnet"), 1, "Coin Magnet inventory incremented to 1")
+
+	# Buy Energy Shield (7500)
+	_assert_true(store.buy_item("shield"), "Successfully bought Energy Shield for 7500")
+	_assert_eq(auth_session.total_coins, 12500, "Total coins reduced to 12500 after buying Shield")
+	_assert_eq(auth_session.get_powerup_count("shield"), 1, "Shield inventory incremented to 1")
+
+	# Buy Rocket Boost (12500)
+	_assert_true(store.buy_item("rocket_boost"), "Successfully bought Rocket Boost for 12500")
+	_assert_eq(auth_session.total_coins, 0, "Total coins reduced to 0 after buying Rocket")
+	_assert_eq(auth_session.get_powerup_count("rocket_boost"), 1, "Rocket Boost inventory incremented to 1")
+
+	# Try to buy 2X Multiplier with 0 coins
+	_assert_false(store.buy_item("coin_doubler"), "Cannot buy 2X Multiplier with 0 coins")
+	_assert_eq(auth_session.get_powerup_count("coin_doubler"), 0, "2X Multiplier inventory remains 0")
+
+	# Use power-up from inventory
+	_assert_true(auth_session.use_powerup("shield"), "use_powerup('shield') succeeds when owned")
+	_assert_eq(auth_session.get_powerup_count("shield"), 0, "Shield count decremented to 0")
+	_assert_false(auth_session.use_powerup("shield"), "use_powerup('shield') returns false when 0 owned")
+
+	# Test player power-up activation and gameplay state
+	var player = load("res://scripts/player_script.gd").new()
+	root.add_child(player)
+	player.game_started = true
+
+	# Test Coin Magnet activation
+	player.activate_powerup("coin_magnet")
+	_assert_eq(player.magnet_timer, 15.0, "Magnet activates for 15 seconds")
+
+	# Test 2X Multiplier activation
+	player.activate_powerup("coin_doubler")
+	_assert_eq(player.doubler_timer, 20.0, "2X Multiplier activates for 20 seconds")
+
+	# Test Shield activation & consumption
+	player.activate_powerup("shield")
+	_assert_true(player.has_shield(), "Player has active shield")
+	player.consume_shield()
+	_assert_false(player.has_shield(), "Shield consumed after hit")
+	_assert_eq(player.invulnerable_timer, 1.5, "Shield break grants 1.5s invulnerability")
+	_assert_true(player.is_invulnerable(), "Player is invulnerable during grace period")
+
+	# Test Rocket Boost activation & level scroll speed
+	player.activate_powerup("rocket_boost")
+	_assert_eq(player.rocket_timer, 7.0, "Rocket Boost activates for 7 seconds")
+	_assert_true(player.is_invulnerable(), "Rocket Boost provides invulnerability")
+
+	# Mock Level and test 2x scroll speed
+	var level = load("res://scripts/level.gd").new()
+	var st := Timer.new()
+	st.name = "spawn_timer"
+	level.add_child(st)
+	var set_t := Timer.new()
+	set_t.name = "spawn_env_timer"
+	level.add_child(set_t)
+	var sot := Timer.new()
+	sot.name = "spawn_obstacle_timer"
+	level.add_child(sot)
+	root.add_child(level)
+	level.player = player
+
+	var base_speed: float = sim_constants.scroll_speed_at_sec(0.0)
+	_assert_eq(level.get_scroll_speed(), base_speed * 2.0, "Level scroll speed is doubled (2x) during Rocket Boost")
+
+	player.rocket_timer = 0.0
+	player.invulnerable_timer = 0.0
+	_assert_eq(level.get_scroll_speed(), base_speed, "Level scroll speed returns to normal after Rocket Boost ends")
+
+	# Test Obstacle collision absorption in level.gd with Shield
+	player.activate_powerup("shield")
+	_assert_true(player.has_shield(), "Player re-armed with Shield for collision test")
+	var obstacle = Node3D.new()
+	obstacle.add_to_group("obstacles")
+	root.add_child(obstacle)
+	obstacle.global_transform.origin = player.global_transform.origin
+
+	level._physics_process(0.016)
+	_assert_false(player.has_shield(), "Shield absorbed fatal obstacle collision")
+	_assert_false(player.is_dead, "Player survived collision thanks to shield")
+	_assert_true(obstacle.is_queued_for_deletion(), "Obstacle destroyed upon shield impact")
+
+	# Clean up
+	obstacle.queue_free()
+	level.queue_free()
+	player.queue_free()
+	store.queue_free()
+	auth_session.clear()
+
