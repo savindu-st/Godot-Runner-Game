@@ -2,7 +2,8 @@ extends Node
 
 const SIM_VERSION: int = 11
 const CLIENT_BUILD: String = "dev"
-
+const API_BASE: String = ""
+const SECURE_SPAWNS: bool = false
 const NUM_LANES: int = 3
 const LANE_X: Array = [-2.0, 0.0, 2.0]
 
@@ -26,18 +27,7 @@ const COIN_SCORE: int = 1
 const DISTANCE_SCORE_PER_UNIT: float = 0.0
 const LOCAL_SCORE_PER_SEC: float = 0.0
 
-# Supabase Backend Configuration
-var SUPABASE_URL: String = "https://txcitxcptrrbdqevrzbi.supabase.co"
-var SUPABASE_ANON_KEY: String = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR4Y2l0eGNwdHJyYmRxZXZyemJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkzODk5OTYsImV4cCI6MjEwNDk2NTk5Nn0.flv4DKSdyOzxv6WIj_8bqcW7Kt1Ly0TmgN-MawrpWfc"
 
-# Legacy / optional custom API server (fallback)
-const API_BASE: String = ""
-const OFFLINE_FALLBACK: bool = true
-const DEBUG_API: bool = true
-const SECURE_SPAWNS: bool = true
-
-func has_supabase() -> bool:
-	return SUPABASE_URL.strip_edges() != "" and SUPABASE_ANON_KEY.strip_edges() != ""
 
 
 const SPAWN_Z: float = -50.0

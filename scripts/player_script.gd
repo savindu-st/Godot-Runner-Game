@@ -47,10 +47,8 @@ var game_over: bool = false
 var coin_count: int = 0
 
 var coin_label: Label
-var _name_label: Label
 var _best_label: Label
 var _dist_label: Label
-var _name_sign: HudSign
 var _coin_sign: HudSign
 var _best_sign: HudSign
 var _dist_sign: HudSign
@@ -78,10 +76,6 @@ var _character_model: Node3D
 var _character_ready: bool = false
 var _overlay_title: Label
 var _resume_btn: Button
-var _claim_btn: Button
-var _lb_btn: Button
-var _auth_panel: Control
-var _leaderboard_panel: Control
 
 var magnet_timer: float = 0.0
 var shield_active: bool = false
@@ -130,12 +124,10 @@ func _init_player() -> void:
 	_enter_attract_mode()
 	_setup_hud()
 	_setup_shield_mesh()
-	if not RunSession.checkpoint_resolved.is_connected(_on_checkpoint_resolved):
-		RunSession.checkpoint_resolved.connect(_on_checkpoint_resolved)
-	if not RunSession.finish_resolved.is_connected(_on_finish_resolved):
-		RunSession.finish_resolved.connect(_on_finish_resolved)
-	if not AuthSession.profile_updated.is_connected(_on_profile_updated):
-		AuthSession.profile_updated.connect(_on_profile_updated)
+	if not RunManager.finish_resolved.is_connected(_on_finish_resolved):
+		RunManager.finish_resolved.connect(_on_finish_resolved)
+	if not SaveManager.profile_updated.is_connected(_on_profile_updated):
+		SaveManager.profile_updated.connect(_on_profile_updated)
 	if death_audio:
 		death_audio.process_mode = Node.PROCESS_MODE_ALWAYS
 		death_audio.add_to_group("web_audio")
@@ -283,10 +275,6 @@ func _setup_hud() -> void:
 	add_child(_hud_layer)
 
 	# Subway Surfers style signs
-	_name_sign = HudSign.create_sign(HudSign.SignType.PLAYER, "Guest")
-	_hud_layer.add_child(_name_sign)
-	_name_label = _name_sign.label
-
 	_best_sign = HudSign.create_sign(HudSign.SignType.BEST, "Best 0")
 	_hud_layer.add_child(_best_sign)
 	_best_label = _best_sign.label
@@ -382,43 +370,6 @@ func _setup_hud() -> void:
 	_resume_btn.pressed.connect(_resume_game)
 	_resume_btn.visible = false
 
-	_claim_btn = Button.new()
-	box.add_child(_claim_btn)
-	_claim_btn.custom_minimum_size = Vector2(0, BrowserBridge.popup_button_height())
-	_claim_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	if font:
-		_claim_btn.add_theme_font_override("font", font)
-	_claim_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font())
-	_claim_btn.text = "CLAIM ON LEADERBOARD"
-	var claim_color := Color(0.2, 0.8, 0.45)
-	_claim_btn.add_theme_stylebox_override("normal", _pill_style(claim_color))
-	_claim_btn.add_theme_stylebox_override("hover", _pill_style(claim_color.lightened(0.2)))
-	_claim_btn.add_theme_stylebox_override("pressed", _pill_style(claim_color.darkened(0.2)))
-	_claim_btn.add_theme_color_override("font_color", claim_color)
-	_claim_btn.pressed.connect(func():
-		if _auth_panel:
-			_auth_panel.open()
-	)
-	_claim_btn.visible = false
-
-	_lb_btn = Button.new()
-	box.add_child(_lb_btn)
-	_lb_btn.custom_minimum_size = Vector2(0, BrowserBridge.popup_button_height())
-	_lb_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	if font:
-		_lb_btn.add_theme_font_override("font", font)
-	_lb_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font())
-	_lb_btn.text = "LEADERBOARD"
-	var lb_color := Color(1.0, 0.75, 0.2)
-	_lb_btn.add_theme_stylebox_override("normal", _pill_style(lb_color))
-	_lb_btn.add_theme_stylebox_override("hover", _pill_style(lb_color.lightened(0.2)))
-	_lb_btn.add_theme_stylebox_override("pressed", _pill_style(lb_color.darkened(0.2)))
-	_lb_btn.add_theme_color_override("font_color", lb_color)
-	_lb_btn.pressed.connect(func():
-		if _leaderboard_panel:
-			_leaderboard_panel.open()
-	)
-
 	_play_again_btn = Button.new()
 	box.add_child(_play_again_btn)
 	_play_again_btn.custom_minimum_size = Vector2(0, BrowserBridge.popup_button_height())
@@ -451,25 +402,6 @@ func _setup_hud() -> void:
 	_menu_btn.add_theme_stylebox_override("hover", _pill_style(menu_border_color.lightened(0.2)))
 	_menu_btn.add_theme_stylebox_override("pressed", _pill_style(menu_border_color.darkened(0.2)))
 	_menu_btn.pressed.connect(_go_menu)
-
-	_auth_panel = load("res://scripts/auth_panel.gd").new()
-	_hud_layer.add_child(_auth_panel)
-	_auth_panel.logged_in.connect(func():
-		_finish_ui_finalized = false
-		if coin_count > 0 and SimConstants.has_supabase():
-			ApiClient.post_with_jwt("/v1/run/finish", {
-				"p_coins": coin_count,
-				"p_duration_sec": 60.0,
-			})
-		_trigger_game_over()
-	)
-
-	_leaderboard_panel = load("res://scripts/leaderboard_panel.gd").new()
-	_hud_layer.add_child(_leaderboard_panel)
-	_leaderboard_panel.request_open_auth.connect(func():
-		if _auth_panel:
-			_auth_panel.open()
-	)
 
 	_setup_start_prompt(_hud_layer)
 	call_deferred("_layout_hud_panels")
@@ -521,7 +453,7 @@ func _on_back_pressed() -> void:
 		if game_over:
 			_go_menu()
 			return
-		RunSession.run_active = false
+		RunManager.run_active = false
 		var level := get_tree().get_first_node_in_group("level")
 		if level and level.has_method("freeze_world"):
 			level.freeze_world()
@@ -678,7 +610,7 @@ func _on_start_pressed() -> void:
 		return
 	game_started = true
 	_countdown_running = false
-	RunSession.mark_run_scroll_started()
+	RunManager.mark_run_scroll_started()
 	if _start_overlay:
 		_start_overlay.visible = false
 	_play_anim(run_anim, true, 0.2)
@@ -810,11 +742,6 @@ func _layout_hud_panels() -> void:
 		_back_btn.size = Vector2(menu_size, menu_size)
 		_back_btn.pivot_offset = Vector2(menu_size / 2.0, menu_size / 2.0)
 
-	if _name_sign:
-		_name_sign.align_left(pad_left + menu_size + 10.0, pad_top + 2.0)
-	elif _name_label:
-		_name_label.position = Vector2(pad_left, pad_top + menu_size + 10.0)
-
 	# Top-right: Stacked Subway Surfers signs
 	if _best_sign:
 		_best_sign.align_right(right_edge, pad_top)
@@ -863,29 +790,17 @@ func _refresh_coin_hud() -> void:
 		coin_label.text = str(coin_count)
 
 	var show_hud := true
-	if _name_sign: _name_sign.visible = show_hud
 	if _best_sign: _best_sign.visible = show_hud
 	if _dist_sign: _dist_sign.visible = show_hud
-	if _name_label and not _name_sign: _name_label.visible = show_hud
 	if _best_label and not _best_sign: _best_label.visible = show_hud
 	if _dist_label and not _dist_sign: _dist_label.visible = show_hud
 
 	if not show_hud:
 		return
 
-	var player_name := AuthSession.username.strip_edges()
-	if player_name == "":
-		player_name = AuthSession.index_number.strip_edges()
-	if player_name == "":
-		player_name = "Guest"
-	if _name_sign:
-		_name_sign.set_text(player_name)
-		var pad_left := maxf(BrowserBridge.popup_edge_margin() + 16.0, 24.0)
-		_name_sign.align_left(pad_left + 48.0 + 10.0, 24.0)
-	elif _name_label:
-		_name_label.text = player_name
 
-	var best_text := "Best %d" % AuthSession.best_coins
+
+	var best_text := "Best %d" % SaveManager.best_coins
 	if _best_sign:
 		_best_sign.set_text(best_text)
 		var width := get_viewport().get_visible_rect().size.x
@@ -894,7 +809,7 @@ func _refresh_coin_hud() -> void:
 		_best_sign.align_right(width - pad_right, 22.0)
 		
 		# Check if beaten personal best during this run!
-		if AuthSession.best_coins > 0 and coin_count > AuthSession.best_coins and not _passed_high_score:
+		if SaveManager.best_coins > 0 and coin_count > SaveManager.best_coins and not _passed_high_score:
 			_passed_high_score = true
 			_best_sign.bounce(1.4)
 			_best_sign.flash_celebrate(Color(1.6, 1.4, 0.4, 1.0))
@@ -907,12 +822,7 @@ func _on_profile_updated(_body: Dictionary) -> void:
 	_refresh_coin_hud()
 
 
-func _on_checkpoint_resolved(accepted: bool, data: Dictionary) -> void:
-	if is_dead or dying or game_over:
-		return
-	if accepted:
-		coin_count = int(data.get("run_total_coins", coin_count))
-		_refresh_coin_hud()
+
 
 
 func _on_finish_resolved(success: bool, data: Dictionary) -> void:
@@ -1084,20 +994,17 @@ func _change_lane(dir: int) -> void:
 	current_lane = clampi(current_lane + dir, 0, LANE_X.size() - 1)
 	if old_lane == current_lane:
 		return
-	var level := get_tree().get_first_node_in_group("level")
-	if level and level.has_method("get_segment_distance") and MoveLog.can_log_lane_change():
-		MoveLog.log_lane_change(old_lane, current_lane, level.get_segment_distance())
 
 func _restart() -> void:
 	get_tree().paused = false
 	if SimConstants.API_BASE.is_empty():
-		RunSession.restart_run()
+		RunManager.restart_run()
 		get_tree().reload_current_scene()
 		return
-	if RunSession.run_ready.is_connected(_on_restart_run_ready):
-		RunSession.run_ready.disconnect(_on_restart_run_ready)
-	RunSession.run_ready.connect(_on_restart_run_ready, CONNECT_ONE_SHOT)
-	RunSession.restart_run()
+	if RunManager.run_ready.is_connected(_on_restart_run_ready):
+		RunManager.run_ready.disconnect(_on_restart_run_ready)
+	RunManager.run_ready.connect(_on_restart_run_ready, CONNECT_ONE_SHOT)
+	RunManager.restart_run()
 
 
 func _on_restart_run_ready(success: bool, _error_message: String) -> void:
@@ -1243,9 +1150,7 @@ func _physics_process(delta: float) -> void:
 		is_jumping = true
 		if is_sliding:
 			is_sliding = false
-		var level := get_tree().get_first_node_in_group("level")
-		if level and level.has_method("get_segment_distance"):
-			MoveLog.log_jump_start(level.get_segment_distance())
+
 		if jump_anim != "":
 			_play_anim(jump_anim, false)
 	jump_requested = false
@@ -1282,9 +1187,7 @@ func _physics_process(delta: float) -> void:
 			vertical_velocity = 0.0
 			if is_jumping:
 				is_jumping = false
-				var level := get_tree().get_first_node_in_group("level")
-				if level and level.has_method("get_segment_distance"):
-					MoveLog.log_jump_land(level.get_segment_distance())
+
 				_transition_to_run_after_jump()
 
 	global_transform.origin = pos
@@ -1326,33 +1229,13 @@ func _start_death() -> void:
 		if a:
 			death_wait = maxf(a.length, 0.5)
 	await get_tree().create_timer(death_wait, true).timeout
-	if RunSession.offline_mode:
-		_finish_success = true
+	RunManager.run_total_coins = coin_count
+	if not _finish_done:
 		var level = get_tree().get_first_node_in_group("level")
-		var current_dist: int = 0
+		var current_dist: float = 0.0
 		if level and "run_distance" in level:
-			current_dist = int(level.run_distance / 2.0)
-		var is_new := current_dist > AuthSession.best_distance
-		if is_new:
-			AuthSession.best_distance = current_dist
-		if coin_count > AuthSession.best_coins:
-			AuthSession.best_coins = coin_count
-		if not RunSession.coins_awarded_for_run:
-			RunSession.coins_awarded_for_run = true
-			AuthSession.add_coins(coin_count)
-		elif is_new or coin_count > AuthSession.best_coins:
-			AuthSession._persist()
-		_finish_data = {
-			"final_distance": current_dist,
-			"best_distance": AuthSession.best_distance,
-			"final_coins": coin_count,
-			"best_coins": AuthSession.best_coins,
-			"total_coins": AuthSession.total_coins,
-			"is_new_best": is_new,
-		}
-		_show_game_over_loading()
-		_trigger_game_over()
-		return
+			current_dist = level.run_distance / 2.0
+		RunManager.submit_finish(current_dist)
 	_show_game_over_loading()
 	if _finish_done:
 		_trigger_game_over()
@@ -1439,28 +1322,14 @@ func _trigger_game_over() -> void:
 
 	lines.append("Distance: %dm" % display_distance)
 	lines.append("Coins: +%d" % display_coins)
-	lines.append("Total Coins: %d" % AuthSession.total_coins)
+	lines.append("Total Coins: %d" % SaveManager.total_coins)
 
-	var is_new_best: bool = bool(_finish_data.get("is_new_best", false)) or (display_distance > AuthSession.best_distance)
+	var is_new_best: bool = bool(_finish_data.get("is_new_best", false)) or (display_distance > SaveManager.best_distance)
 
-	if AuthSession.is_logged_in():
-		var rank: int = int(_finish_data.get("rank", AuthSession.global_rank))
-		if rank > 0:
-			lines.append("Global Rank: #%d" % rank)
-		if is_new_best:
-			lines.append("🌟 NEW DISTANCE RECORD! 🌟")
-		else:
-			lines.append("Best: %dm" % AuthSession.best_distance)
-		if _claim_btn:
-			_claim_btn.visible = false
+	if is_new_best:
+		lines.append("🌟 NEW RECORD! 🌟")
 	else:
-		if is_new_best:
-			lines.append("🌟 NEW GUEST RECORD! 🌟")
-		else:
-			lines.append("Guest Best: %dm" % AuthSession.best_distance)
-		lines.append("Sign in to join the Leaderboard!")
-		if _claim_btn:
-			_claim_btn.visible = true
+		lines.append("Best: %dm" % SaveManager.best_distance)
 
 	result_label.text = "\n".join(lines)
 	overlay.visible = true
@@ -1475,13 +1344,9 @@ func _on_collision_area_entered(area) -> void:
 		_play_coin_sfx()
 		var coin_val: int = 2 if doubler_timer > 0.0 else 1
 		coin_count += coin_val
+		RunManager.run_total_coins = coin_count
 		_refresh_coin_hud()
-		var level := get_tree().get_first_node_in_group("level")
-		if level and level.has_method("get_segment_distance"):
-			var oid: int = int(parent.get_meta("object_id", -1))
-			var lane: int = int(parent.get_meta("spawn_lane", current_lane))
-			var dist: float = float(parent.get_meta("map_distance", level.get_segment_distance()))
-			MoveLog.log_coin(oid, lane, dist, coin_val)
+
 		if parent.has_method("collect"):
 			parent.collect()
 		else:
@@ -1522,10 +1387,10 @@ func _try_activate_powerup(id: String) -> void:
 	if id == "shield" and shield_active:
 		_spawn_floating_coin_popup("Shield already ON!")
 		return
-	if AuthSession.get_powerup_count(id) <= 0:
+	if SaveManager.get_powerup_count(id) <= 0:
 		_spawn_floating_coin_popup("0 Owned - Buy in Store!")
 		return
-	if AuthSession.use_powerup(id):
+	if SaveManager.use_powerup(id):
 		activate_powerup(id)
 
 
@@ -1609,8 +1474,8 @@ func _setup_powerup_hud(parent: Node) -> void:
 		hbox.add_child(slot)
 		_powerup_slots[item["id"]] = slot
 
-	if not AuthSession.inventory_changed.is_connected(_update_powerup_dock):
-		AuthSession.inventory_changed.connect(_update_powerup_dock)
+	if not SaveManager.inventory_changed.is_connected(_update_powerup_dock):
+		SaveManager.inventory_changed.connect(_update_powerup_dock)
 
 	_update_powerup_dock()
 
@@ -1673,14 +1538,14 @@ func _create_powerup_slot(id: String, icon: String, key_num: String, _short_name
 func _update_powerup_dock() -> void:
 	if _powerup_dock == null:
 		return
-	var is_visible: bool = game_started and not is_dead and not dying and not game_over
-	_powerup_dock.visible = is_visible
-	if not is_visible:
+	var dock_visible: bool = game_started and not is_dead and not dying and not game_over
+	_powerup_dock.visible = dock_visible
+	if not dock_visible:
 		return
 
 	for id in _powerup_slots.keys():
 		var slot: Button = _powerup_slots[id]
-		var count: int = AuthSession.get_powerup_count(id)
+		var count: int = SaveManager.get_powerup_count(id)
 		var status_label: Label = slot.find_child("StatusLabel", true, false)
 		var key_num := "1"
 		match id:

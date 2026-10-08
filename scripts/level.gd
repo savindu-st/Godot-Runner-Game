@@ -85,6 +85,14 @@ func _ready():
 		player = get_node_or_null("player_body")
 	if spawn_env_timer:
 		spawn_env_timer.stop()
+		
+	if spawn_timer and not spawn_timer.timeout.is_connected(_on_spawn_timer_timeout):
+		spawn_timer.timeout.connect(_on_spawn_timer_timeout)
+	if spawn_env_timer and not spawn_env_timer.timeout.is_connected(_on_spawn_env_timer_timeout):
+		spawn_env_timer.timeout.connect(_on_spawn_env_timer_timeout)
+	if spawn_obstacle_timer and not spawn_obstacle_timer.timeout.is_connected(_on_spawn_obstacle_timer_timeout):
+		spawn_obstacle_timer.timeout.connect(_on_spawn_obstacle_timer_timeout)
+		
 	_setup_bgm()
 	if not BrowserBridge.page_backgrounded.is_connected(_on_page_background):
 		BrowserBridge.page_backgrounded.connect(_on_page_background)
@@ -96,8 +104,6 @@ func _ready():
 			spawn_timer.stop()
 		if spawn_obstacle_timer:
 			spawn_obstacle_timer.stop()
-		if not RunSession.checkpoint_resolved.is_connected(_on_checkpoint_resolved):
-			RunSession.checkpoint_resolved.connect(_on_checkpoint_resolved)
 	call_deferred("_deferred_level_boot")
 
 
@@ -183,7 +189,6 @@ func begin_run() -> void:
 func _boot_secure_segment() -> void:
 	if player == null:
 		return
-	RunSession.ensure_segment_for_level(player.current_lane)
 	_init_secure_segment()
 
 
@@ -192,7 +197,7 @@ func get_segment_distance() -> float:
 
 
 func get_scroll_speed() -> float:
-	var base := SimConstants.scroll_speed_at_sec(RunSession.run_scroll_elapsed_sec())
+	var base := SimConstants.scroll_speed_at_sec(RunManager.run_scroll_elapsed_sec())
 	if is_instance_valid(player) and "rocket_timer" in player and player.rocket_timer > 0.0:
 		return base * 2.0
 	return base
@@ -243,7 +248,7 @@ func _halt_node(node: Node) -> void:
 
 func _init_secure_segment() -> void:
 	# New coin/rock map for this segment — scroll speed clock is unchanged.
-	_segment_spawns = SegmentMapGen.generate(RunSession.current_seed)
+	_segment_spawns = SegmentMapGen.generate(RunManager.current_seed)
 	_next_spawn_idx = 0
 	_segment_start_distance = run_distance
 	_checkpoint_busy = false
@@ -293,7 +298,7 @@ func _spawn_seeded_coin(entry: Dictionary) -> void:
 func _spawn_seeded_obstacle(entry: Dictionary) -> void:
 	if obstacle_templates.is_empty():
 		return
-	var rng := SeededRng.new(int(entry.object_id) + RunSession.current_seed)
+	var rng := SeededRng.new(int(entry.object_id) + RunManager.current_seed)
 	var idx: int = rng.randi_mod(obstacle_templates.size())
 	var mover := _make_mover(obstacle_templates[idx])
 	mover.add_to_group("obstacles")
@@ -329,7 +334,6 @@ func _on_checkpoint_resolved(accepted: bool, _data: Dictionary) -> void:
 		return
 	if player == null or player.is_dead or player.game_over:
 		return
-	RunSession.apply_next_segment(player.current_lane)
 	_init_secure_segment()
 
 
@@ -339,7 +343,6 @@ func _try_segment_checkpoint() -> void:
 	if get_segment_distance() < SimConstants.SEGMENT_LENGTH:
 		return
 	_checkpoint_busy = true
-	RunSession.submit_checkpoint(get_segment_distance())
 
 
 func _setup_road_segments() -> void:
@@ -1191,10 +1194,9 @@ func _physics_process(_delta: float) -> void:
 				# Failed jump: jump_start is logged at takeoff; log land before crash so replay
 				# knows the player hit the obstacle low, not cleared it while airborne.
 				if player.is_jumping:
-					MoveLog.log_jump_land(dist)
-				MoveLog.log_collision(oid, lane, dist)
+					pass # TODO: log jump land before crash
 				player.die()
-				RunSession.submit_finish(dist, "collision", run_distance / 2.0)
+				RunManager.submit_finish(dist)
 			else:
 				player.die()
 			return
