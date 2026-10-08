@@ -59,12 +59,12 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_powerup_items = DEFAULT_POWERUPS.duplicate(true)
 	_build_ui()
-	if not AuthSession.coins_changed.is_connected(_on_coins_changed):
-		AuthSession.coins_changed.connect(_on_coins_changed)
-	if not AuthSession.profile_updated.is_connected(_on_profile_updated):
-		AuthSession.profile_updated.connect(_on_profile_updated)
-	if not AuthSession.inventory_changed.is_connected(_on_inventory_changed):
-		AuthSession.inventory_changed.connect(_on_inventory_changed)
+	if not SaveManager.coins_changed.is_connected(_on_coins_changed):
+		SaveManager.coins_changed.connect(_on_coins_changed)
+	if not SaveManager.profile_updated.is_connected(_on_profile_updated):
+		SaveManager.profile_updated.connect(_on_profile_updated)
+	if not SaveManager.inventory_changed.is_connected(_on_inventory_changed):
+		SaveManager.inventory_changed.connect(_on_inventory_changed)
 	visible = false
 
 
@@ -302,7 +302,7 @@ func _build_item_card(item: Dictionary) -> PanelContainer:
 
 	var price: int = int(item.get("price", 5000))
 	var item_id := str(item.get("id", ""))
-	var owned_cnt: int = AuthSession.get_powerup_count(item_id)
+	var owned_cnt: int = SaveManager.get_powerup_count(item_id)
 
 	var owned_lbl := Label.new()
 	action_box.add_child(owned_lbl)
@@ -331,7 +331,7 @@ func _build_item_card(item: Dictionary) -> PanelContainer:
 		if font:
 			buy_btn.add_theme_font_override("font", font)
 		buy_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font() - 4)
-		var can_afford: bool = AuthSession.total_coins >= price
+		var can_afford: bool = SaveManager.total_coins >= price
 		buy_btn.add_theme_stylebox_override("normal", _pill_btn(Color(0.2, 0.7, 0.35) if can_afford else Color(0.25, 0.3, 0.4)))
 		buy_btn.pressed.connect(func(): _on_buy_pressed(item_id, price))
 	else:
@@ -351,8 +351,8 @@ func buy_item(item_id: String) -> bool:
 	for item in _powerup_items:
 		if item.get("id") == item_id:
 			var price: int = int(item.get("price", 0))
-			if AuthSession.spend_coins(price):
-				AuthSession.add_powerup(item_id, 1)
+			if SaveManager.spend_coins(price):
+				SaveManager.add_powerup(item_id, 1)
 				item_purchased.emit(item_id)
 				_refresh_coins_display()
 				_populate_items()
@@ -383,7 +383,7 @@ func _on_profile_updated(_body: Dictionary) -> void:
 
 func _refresh_coins_display() -> void:
 	if _coins_sign:
-		_coins_sign.set_text("%d" % AuthSession.total_coins)
+		_coins_sign.set_text("%d" % SaveManager.total_coins)
 		_coins_sign.bounce(1.15)
 
 

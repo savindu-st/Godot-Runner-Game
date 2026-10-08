@@ -21,11 +21,8 @@ boot_splash/show_image=false
 GameSettings="*res://scripts/game_settings.gd"
 BrowserBridge="*res://scripts/browser_bridge.gd"
 SimConstants="*res://scripts/secure/sim_constants.gd"
-MoveLog="*res://scripts/secure/move_log.gd"
-RunSession="*res://scripts/secure/run_session.gd"
-ApiClient="*res://scripts/secure/api_client.gd"
-AuthSession="*res://scripts/secure/auth_session.gd"
-VersionCheck="*res://scripts/secure/version_check.gd"
+RunManager="*res://scripts/run_manager.gd"
+SaveManager="*res://scripts/save_manager.gd"
 
 [display]
 
