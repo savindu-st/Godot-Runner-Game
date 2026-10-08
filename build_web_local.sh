@@ -10,6 +10,7 @@ echo "=== Godot Web Build & Post-Processing ==="
 # Check if we should run automatic headless export
 if command -v godot &> /dev/null; then
     echo "Found godot CLI. Exporting headless..."
+    export GODOT_SCRIPT_ENCRYPTION_KEY="${GODOT_SCRIPT_ENCRYPTION_KEY:-065175ea1561a1af86c1eb25013748ff5e5b5e0107edb7a578fe32812048a7ea}"
     godot --headless --path . --export-release "Web" "$WEB_DIR/index.html"
 else
     echo "Godot CLI not found in PATH."

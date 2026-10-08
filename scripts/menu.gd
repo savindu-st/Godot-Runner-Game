@@ -19,9 +19,6 @@ var _settings_panel: PanelContainer
 var _settings_box: VBoxContainer
 var _sound_btn: Button
 var _play_btn: Button
-var _auth_panel: Control
-var _login_btn: Button
-var _logout_btn: Button
 var _title_label: Label
 var _characters_btn: Button
 var _char_overlay: PanelContainer
@@ -33,19 +30,14 @@ var _char_3d_root: Node3D
 var _char_model_instance: Node3D
 var _current_char_index: int = 0
 
-var _maps_btn: Button
-var _map_overlay: PanelContainer
-var _map_overlay_dim: ColorRect
-var _map_name_label: Label
-var _map_viewport_container: SubViewportContainer
-var _map_viewport: SubViewport
-var _map_3d_root: Node3D
-var _map_model_instance: Node3D
-var _current_map_index: int = 0
 var _menu_name_label: Label
 var _menu_best_label: Label
+var _menu_name_sign: HudSign
+var _menu_best_sign: HudSign
+var _menu_coins_sign: HudSign
+var _store_panel: Control
+var _store_btn: Button
 var _play_wait_timer: Timer
-var _offline_name_field: LineEdit
 var _btn_font: int = 42
 var _title_font: int = 92
 
@@ -55,15 +47,13 @@ func _ready() -> void:
 	_apply_responsive_scale()
 	_build_ui()
 	_refresh_auth_ui()
-	if not AuthSession.auth_ready.is_connected(_on_auth_ready):
-		AuthSession.auth_ready.connect(_on_auth_ready)
 	# Login opens via PLAY ("LOGIN TO PLAY") or Settings — not forced on load.
-	if not AuthSession.profile_updated.is_connected(_on_profile_updated):
-		AuthSession.profile_updated.connect(_on_profile_updated)
+	if not SaveManager.profile_updated.is_connected(_on_profile_updated):
+		SaveManager.profile_updated.connect(_on_profile_updated)
+	if not SaveManager.coins_changed.is_connected(_on_coins_changed):
+		SaveManager.coins_changed.connect(_on_coins_changed)
 	if not get_viewport().size_changed.is_connected(_layout_menu_top_bar):
 		get_viewport().size_changed.connect(_layout_menu_top_bar)
-	if not VersionCheck.update_required.is_connected(_on_update_required):
-		VersionCheck.update_required.connect(_on_update_required)
 	call_deferred("_check_app_version")
 	call_deferred("_focus_web_canvas")
 
@@ -82,7 +72,6 @@ func _maybe_show_auth() -> void:
 	pass
 
 
-func _on_auth_ready(_logged_in: bool) -> void:
 	_refresh_auth_ui()
 
 
@@ -121,10 +110,15 @@ func _build_ui() -> void:
 	_title_label = Label.new()
 	root.add_child(_title_label)
 	_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var font = HudSign.get_hud_font()
+	if font:
+		_title_label.add_theme_font_override("font", font)
 	_title_label.add_theme_font_size_override("font_size", _title_font)
 	_title_label.add_theme_color_override("font_color", Color(1, 0.86, 0.32)) # Neon yellow
-	_title_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.55))
-	_title_label.add_theme_constant_override("outline_size", 10)
+	_title_label.add_theme_color_override("font_outline_color", Color(0.04, 0.02, 0.01, 0.95))
+	_title_label.add_theme_constant_override("outline_size", 14)
+	_title_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	_title_label.add_theme_constant_override("shadow_offset_y", 6)
 	_title_label.text = "EVER DASH"
 	
 	_title_label.resized.connect(func():
@@ -142,8 +136,8 @@ func _build_ui() -> void:
 	btn_col.add_theme_constant_override("separation", 14 if BrowserBridge.is_mobile_viewport() else 16)
 
 	_play_btn = _add_menu_button(btn_col, "PLAY", Color(0.16, 0.72, 0.4), _on_play)
+	_store_btn = _add_menu_button(btn_col, "STORE", Color(1.0, 0.68, 0.15), _show_store)
 	_characters_btn = _add_menu_button(btn_col, "CHARACTERS", Color(0.2, 0.5, 0.75), _show_char_selection)
-	_maps_btn = _add_menu_button(btn_col, "MAPS", Color(0.7, 0.3, 0.6), _show_map_selection)
 	_add_menu_button(btn_col, "SETTINGS", Color(0.28, 0.32, 0.42), _show_settings)
 	if OS.get_name() != "Web":
 		_add_menu_button(btn_col, "QUIT", Color(0.45, 0.18, 0.18), _on_quit)
@@ -151,63 +145,73 @@ func _build_ui() -> void:
 	_build_overlay()
 	_build_settings_panel()
 	_build_char_selection()
-	_build_map_selection()
 
-	var auth_layer := CanvasLayer.new()
-	auth_layer.name = "AuthLayer"
-	auth_layer.layer = 100
-	add_child(auth_layer)
-	_auth_panel = load("res://scripts/auth_panel.gd").new()
-	auth_layer.add_child(_auth_panel)
-	_auth_panel.logged_in.connect(_on_logged_in)
+
+
+	_store_panel = load("res://scripts/store_panel.gd").new()
+	add_child(_store_panel)
 
 	_build_menu_top_bar()
 
 
 func _build_menu_top_bar() -> void:
-	_menu_name_label = _menu_hud_label(HORIZONTAL_ALIGNMENT_LEFT, Color(0.9, 0.95, 1.0))
-	add_child(_menu_name_label)
+	_menu_coins_sign = HudSign.create_sign(HudSign.SignType.COIN, "0")
+	_menu_coins_sign.z_index = 20
+	_menu_coins_sign.mouse_filter = Control.MOUSE_FILTER_STOP
+	_menu_coins_sign.gui_input.connect(func(e: InputEvent):
+		if (e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT) or (e is InputEventScreenTouch and e.pressed):
+			_show_store()
+	)
+	add_child(_menu_coins_sign)
 
-	_menu_best_label = _menu_hud_label(HORIZONTAL_ALIGNMENT_RIGHT, Color(1, 0.88, 0.42))
-	add_child(_menu_best_label)
+	_menu_best_sign = HudSign.create_sign(HudSign.SignType.BEST, "Best 0")
+	_menu_best_sign.z_index = 20
+	_menu_best_sign.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(_menu_best_sign)
+	_menu_best_label = _menu_best_sign.label
+	_menu_best_sign.start_idle_wobble()
 
 	call_deferred("_layout_menu_top_bar")
 	_refresh_menu_top_bar()
 
 
 func _layout_menu_top_bar() -> void:
-	if _menu_name_label == null:
-		return
 	var width := get_viewport().get_visible_rect().size.x
 	if width <= 0.0:
 		width = float(get_viewport().size.x)
 	if width <= 0.0:
 		width = 720.0
-	var top := 18.0
-	var height := 44.0
-	var side_w := 220.0
-	var best_side_w := 350.0
-	_menu_name_label.position = Vector2(18.0, top)
-	_menu_name_label.size = Vector2(side_w, height)
-	_menu_best_label.position = Vector2(width - best_side_w - 24.0, top)
-	_menu_best_label.size = Vector2(best_side_w, height)
+	var top := 22.0
+	var _pad_left := maxf(BrowserBridge.popup_edge_margin() + 16.0, 24.0)
+	var pad_right := maxf(BrowserBridge.popup_edge_margin() + 16.0, 24.0)
+	
+	if _menu_coins_sign:
+		_menu_coins_sign.align_right(width - pad_right, top)
+	if _menu_best_sign:
+		_menu_best_sign.align_right(width - pad_right, top + 46.0)
 
 
 func _refresh_menu_top_bar() -> void:
-	if _menu_name_label == null:
-		return
 	var show_hud := true
-	_menu_name_label.visible = show_hud
-	_menu_best_label.visible = show_hud
+	
+	if _menu_coins_sign:
+		_menu_coins_sign.visible = show_hud
+	_menu_best_sign.visible = show_hud
 	if not show_hud:
 		return
-	var player_name := AuthSession.username.strip_edges()
-	if player_name == "":
-		player_name = AuthSession.index_number.strip_edges()
-	if player_name == "":
-		player_name = "Guest"
-	_menu_name_label.text = player_name
-	_menu_best_label.text = "Best %d" % AuthSession.best_coins
+
+	_menu_best_sign.set_text("Best %dm" % SaveManager.best_distance)
+	if _menu_coins_sign:
+		_menu_coins_sign.set_text("%d" % SaveManager.total_coins)
+	
+	var width := get_viewport().get_visible_rect().size.x
+	if width <= 0.0: width = 720.0
+	var _pad_left := maxf(BrowserBridge.popup_edge_margin() + 16.0, 24.0)
+	var pad_right := maxf(BrowserBridge.popup_edge_margin() + 16.0, 24.0)
+	if _menu_coins_sign:
+		_menu_coins_sign.align_right(width - pad_right, 22.0)
+	if _menu_best_sign:
+		_menu_best_sign.align_right(width - pad_right, 68.0)
 
 
 func _menu_hud_label(align: HorizontalAlignment, color: Color) -> Label:
@@ -218,6 +222,9 @@ func _menu_hud_label(align: HorizontalAlignment, color: Color) -> Label:
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.clip_text = false
 	label.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+	var font = HudSign.get_hud_font()
+	if font:
+		label.add_theme_font_override("font", font)
 	label.add_theme_font_size_override("font_size", BrowserBridge.hud_font())
 	label.add_theme_color_override("font_color", color)
 	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
@@ -230,7 +237,7 @@ func _menu_hud_label(align: HorizontalAlignment, color: Color) -> Label:
 
 
 func _on_profile_updated(_body: Dictionary) -> void:
-	_refresh_menu_top_bar()
+	_refresh_auth_ui()
 
 
 func _build_settings_panel() -> void:
@@ -282,9 +289,6 @@ func _build_settings_panel() -> void:
 	settings_title.add_theme_color_override("font_color", Color(1, 0.9, 0.45))
 	settings_title.text = "Settings"
 
-	_login_btn = _add_menu_button(_settings_box, "LOGIN / REGISTER", Color(0.22, 0.38, 0.72), _show_auth_panel)
-	_logout_btn = _add_menu_button(_settings_box, "LOGOUT", Color(0.35, 0.22, 0.22), _on_logout)
-	_logout_btn.visible = false
 
 	# Local nickname option for offline mode
 	if true:
@@ -294,16 +298,6 @@ func _build_settings_panel() -> void:
 		name_label.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font())
 		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		
-		_offline_name_field = LineEdit.new()
-		_settings_box.add_child(_offline_name_field)
-		_offline_name_field.placeholder_text = "Guest Name"
-		_offline_name_field.text = AuthSession.username
-		_offline_name_field.max_length = 32
-		_offline_name_field.custom_minimum_size = Vector2(0, BrowserBridge.popup_button_height() - 8)
-		_offline_name_field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		_offline_name_field.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font())
-		_offline_name_field.alignment = HORIZONTAL_ALIGNMENT_CENTER
-		_offline_name_field.text_changed.connect(_on_offline_name_changed)
 
 
 	_add_menu_button(_settings_box, "ABOUT US", Color(0.28, 0.32, 0.42), func(): _show_overlay("About Us", ABOUT_US_TEXT, true))
@@ -323,6 +317,7 @@ func _build_settings_panel() -> void:
 
 
 func _show_settings() -> void:
+	_hide_store()
 	_refresh_auth_ui()
 	var dim = get_node("SettingsDim")
 	dim.modulate.a = 0
@@ -348,34 +343,33 @@ func _hide_settings() -> void:
 
 
 func _refresh_auth_ui() -> void:
-	var needs_auth := false
-	if _login_btn:
-		_login_btn.visible = false
-	if _logout_btn:
-		_logout_btn.visible = false
 	if _play_btn:
 		_play_btn.disabled = false
 		_play_btn.text = "PLAY"
 	_refresh_menu_top_bar()
 
 
-func _show_auth_panel() -> void:
+func _show_store() -> void:
 	_hide_settings()
 	_hide_overlay()
-	if _auth_panel.has_method("open"):
-		_auth_panel.open()
-	else:
-		_auth_panel.visible = true
+	_hide_char_selection()
+	if _store_panel:
+		if _store_panel.has_method("open"):
+			_store_panel.open()
+		else:
+			_store_panel.visible = true
 
 
-func _on_logged_in() -> void:
-	_refresh_auth_ui()
+func _hide_store() -> void:
+	if _store_panel:
+		if _store_panel.has_method("close"):
+			_store_panel.close()
+		else:
+			_store_panel.visible = false
 
 
-func _on_logout() -> void:
-	AuthSession.clear()
-	RunSession.run_active = false
-	_refresh_auth_ui()
+func _on_coins_changed(_new_total: int) -> void:
+	_refresh_menu_top_bar()
 
 
 func _add_menu_button(parent: Control, text: String, col: Color, cb: Callable) -> Button:
@@ -384,6 +378,9 @@ func _add_menu_button(parent: Control, text: String, col: Color, cb: Callable) -
 	var h := BrowserBridge.menu_button_height()
 	btn.custom_minimum_size = Vector2(0, h)
 	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var font = HudSign.get_hud_font()
+	if font:
+		btn.add_theme_font_override("font", font)
 	btn.add_theme_font_size_override("font_size", _btn_font)
 	btn.text = text
 	btn.add_theme_stylebox_override("normal", _pill(col))
@@ -636,7 +633,11 @@ func _build_char_selection() -> void:
 	select_btn.pressed.connect(_hide_char_selection)
 
 func _show_char_selection() -> void:
+	_hide_store()
 	_current_char_index = GameSettings.selected_character_index
+	if _current_char_index < 0 or _current_char_index >= 2:
+		_current_char_index = 0
+		GameSettings.set_selected_character(0)
 	_refresh_char_preview()
 	_char_overlay_dim.modulate.a = 0
 	_char_overlay.modulate.a = 0
@@ -661,22 +662,16 @@ func _hide_char_selection() -> void:
 func _cycle_character(dir: int) -> void:
 	_current_char_index += dir
 	if _current_char_index < 0:
-		_current_char_index = 4
-	elif _current_char_index > 4:
+		_current_char_index = 1
+	elif _current_char_index > 1:
 		_current_char_index = 0
 	GameSettings.set_selected_character(_current_char_index)
 	_refresh_char_preview()
 
 func _refresh_char_preview() -> void:
 	if _current_char_index == 0:
-		_char_name_label.text = "Anime Girl"
-	elif _current_char_index == 1:
-		_char_name_label.text = "Crimson Runner"
-	elif _current_char_index == 2:
-		_char_name_label.text = "Azure Sprinter"
-	elif _current_char_index == 3:
 		_char_name_label.text = "Leonard"
-	elif _current_char_index == 4:
+	elif _current_char_index == 1:
 		_char_name_label.text = "Remy"
 
 	if _char_model_instance:
@@ -684,9 +679,6 @@ func _refresh_char_preview() -> void:
 		_char_model_instance = null
 	
 	var models = [
-		preload("res://models/anime-girl/anime-girl.glb"),
-		preload("res://models/character2/character2.glb"),
-		preload("res://models/character3/character3.glb"),
 		preload("res://models/Leonard/character.tscn"),
 		preload("res://models/Remy/character.tscn")
 	]
@@ -694,7 +686,7 @@ func _refresh_char_preview() -> void:
 	_char_model_instance = models[_current_char_index].instantiate()
 	
 	var scale_val = 0.85
-	if _current_char_index == 4:
+	if _current_char_index == 1:
 		scale_val = 0.4
 	_char_model_instance.transform = Transform3D(Basis(Vector3.UP, PI).scaled(Vector3(scale_val, scale_val, scale_val)), Vector3.ZERO)
 	_char_3d_root.add_child(_char_model_instance)
@@ -703,7 +695,7 @@ func _refresh_char_preview() -> void:
 	if anim_player == null:
 		anim_player = _char_model_instance.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if anim_player:
-		if _current_char_index == 4:
+		if _current_char_index == 1:
 			for lib_name in anim_player.get_animation_library_list():
 				var lib = anim_player.get_animation_library(lib_name)
 				var new_lib = AnimationLibrary.new()
@@ -737,133 +729,7 @@ func _refresh_char_preview() -> void:
 				anim.loop_mode = Animation.LOOP_LINEAR
 			anim_player.play(target_anim)
 	
-	var tint := Color.WHITE
-	if _current_char_index == 1:
-		tint = Color(1.0, 0.4, 0.4)
-	elif _current_char_index == 2:
-		tint = Color(0.4, 0.6, 1.0)
-	
-	_matte_meshes(_char_model_instance, tint)
-
-
-func _build_map_selection() -> void:
-	_map_overlay_dim = ColorRect.new()
-	_map_overlay_dim.name = "MapOverlayDim"
-	add_child(_map_overlay_dim)
-	_map_overlay_dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_map_overlay_dim.color = Color(0, 0, 0, 0.62)
-	_map_overlay_dim.visible = false
-	_map_overlay_dim.mouse_filter = Control.MOUSE_FILTER_STOP
-	_map_overlay_dim.gui_input.connect(func(e: InputEvent):
-		if e is InputEventScreenTouch and e.pressed:
-			_hide_map_selection()
-		elif e is InputEventMouseButton and e.pressed:
-			_hide_map_selection()
-	)
-	
-	_map_overlay = PanelContainer.new()
-	_map_overlay.name = "MapOverlayPanel"
-	add_child(_map_overlay)
-	_map_overlay.visible = false
-	BrowserBridge.apply_wide_popup(_map_overlay, 0.75)
-	_map_overlay.add_theme_stylebox_override("panel", _overlay_style())
-	
-	var margin = MarginContainer.new()
-	_map_overlay.add_child(margin)
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 20)
-	margin.add_theme_constant_override("margin_right", 20)
-	margin.add_theme_constant_override("margin_top", 20)
-	margin.add_theme_constant_override("margin_bottom", 20)
-	
-	var main_box = VBoxContainer.new()
-	margin.add_child(main_box)
-	main_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	main_box.add_theme_constant_override("separation", 24)
-	
-	var title_label = Label.new()
-	main_box.add_child(title_label)
-	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title_label.text = "SELECT MAP"
-	title_label.add_theme_font_size_override("font_size", BrowserBridge.popup_title_font())
-	title_label.add_theme_color_override("font_color", Color(0.4, 0.8, 1.0))
-	
-	var middle_row = HBoxContainer.new()
-	main_box.add_child(middle_row)
-	middle_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	middle_row.custom_minimum_size = Vector2(0, 150)
-	middle_row.add_theme_constant_override("separation", 16)
-	
-	var left_btn = Button.new()
-	middle_row.add_child(left_btn)
-	left_btn.text = "<"
-	left_btn.custom_minimum_size = Vector2(60, 60)
-	left_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_title_font())
-	left_btn.add_theme_stylebox_override("normal", _pill(Color(0.28, 0.32, 0.42)))
-	left_btn.pressed.connect(func(): _cycle_map(-1))
-	
-	_map_name_label = Label.new()
-	middle_row.add_child(_map_name_label)
-	_map_name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_map_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_map_name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_map_name_label.add_theme_font_size_override("font_size", BrowserBridge.popup_title_font() + 10)
-	_map_name_label.add_theme_color_override("font_color", Color(1, 0.9, 0.45))
-	
-	var right_btn = Button.new()
-	middle_row.add_child(right_btn)
-	right_btn.text = ">"
-	right_btn.custom_minimum_size = Vector2(60, 60)
-	right_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_title_font())
-	right_btn.add_theme_stylebox_override("normal", _pill(Color(0.28, 0.32, 0.42)))
-	right_btn.pressed.connect(func(): _cycle_map(1))
-	
-	var select_btn = Button.new()
-	main_box.add_child(select_btn)
-	select_btn.custom_minimum_size = Vector2(0, BrowserBridge.popup_button_height())
-	select_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	select_btn.text = "CONFIRM"
-	select_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font())
-	select_btn.add_theme_stylebox_override("normal", _pill(Color(0.16, 0.72, 0.4)))
-	select_btn.pressed.connect(_hide_map_selection)
-
-func _show_map_selection() -> void:
-	_current_map_index = GameSettings.selected_map_index
-	_refresh_map_preview()
-	_map_overlay_dim.modulate.a = 0
-	_map_overlay.modulate.a = 0
-	_map_overlay.position.y = 50
-	_map_overlay.visible = true
-	_map_overlay_dim.visible = true
-	var t = create_tween().set_parallel(true)
-	t.tween_property(_map_overlay_dim, "modulate:a", 1.0, 0.2)
-	t.tween_property(_map_overlay, "modulate:a", 1.0, 0.2)
-	t.tween_property(_map_overlay, "position:y", 0.0, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-
-func _hide_map_selection() -> void:
-	var t = create_tween().set_parallel(true)
-	t.tween_property(_map_overlay_dim, "modulate:a", 0.0, 0.15)
-	t.tween_property(_map_overlay, "modulate:a", 0.0, 0.15)
-	t.tween_property(_map_overlay, "position:y", 50.0, 0.15).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	t.chain().tween_callback(func():
-		_map_overlay.visible = false
-		_map_overlay_dim.visible = false
-	)
-
-func _cycle_map(dir: int) -> void:
-	_current_map_index += dir
-	if _current_map_index < 0:
-		_current_map_index = 1
-	elif _current_map_index > 1:
-		_current_map_index = 0
-	GameSettings.set_selected_map(_current_map_index)
-	_refresh_map_preview()
-
-func _refresh_map_preview() -> void:
-	if _current_map_index == 0:
-		_map_name_label.text = "Campus"
-	elif _current_map_index == 1:
-		_map_name_label.text = "City"
+	_matte_meshes(_char_model_instance, Color.WHITE)
 
 
 func _matte_meshes(node: Node, tint: Color = Color.WHITE) -> void:
@@ -900,14 +766,6 @@ func _refresh_sound_label() -> void:
 func _check_app_version() -> void:
 	if SimConstants.API_BASE.is_empty():
 		return
-	VersionCheck.check()
-
-
-func _on_update_required(message: String) -> void:
-	if _play_btn:
-		_play_btn.disabled = true
-		_play_btn.text = "REFRESH PAGE"
-	_show_overlay("Update required", message)
 
 
 func _on_play() -> void:
@@ -918,10 +776,10 @@ func _on_play() -> void:
 		_play_btn.disabled = true
 		_play_btn.text = "LOADING..."
 	_start_play_timeout()
-	if RunSession.run_ready.is_connected(_on_run_ready):
-		RunSession.run_ready.disconnect(_on_run_ready)
-	RunSession.run_ready.connect(_on_run_ready, CONNECT_ONE_SHOT)
-	RunSession.prepare_run()
+	if RunManager.run_ready.is_connected(_on_run_ready):
+		RunManager.run_ready.disconnect(_on_run_ready)
+	RunManager.run_ready.connect(_on_run_ready, CONNECT_ONE_SHOT)
+	RunManager.prepare_run()
 
 
 func _start_play_timeout() -> void:
@@ -951,16 +809,13 @@ func _on_run_ready(success: bool, _error_message: String) -> void:
 	_refresh_auth_ui()
 	if not success:
 		if _play_btn:
-			_play_btn.disabled = SimConstants.API_BASE != "" and not AuthSession.is_logged_in()
+			_play_btn.disabled = SimConstants.API_BASE != "" and not SaveManager.is_logged_in()
 		var msg := GameSettings.USER_ERROR_MSG
 		if _error_message.contains("user_banned"):
 			msg = "Your account has been banned."
 		_show_overlay("Error", msg)
 		return
-	if GameSettings.selected_map_index == 1:
-		get_tree().change_scene_to_file("res://scenes/level_city.tscn")
-	else:
-		get_tree().change_scene_to_file("res://scenes/level.tscn")
+	get_tree().change_scene_to_file("res://scenes/level_city.tscn")
 
 
 func _on_toggle_sound() -> void:
@@ -977,36 +832,19 @@ func _is_mobile() -> bool:
 	return os == "Android" or os == "iOS" or os == "Web"
 
 
-func _on_offline_name_changed(new_text: String) -> void:
-	var clean_name = new_text.strip_edges()
-	AuthSession.set_auth({
-		"username": clean_name
-	})
-
-
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel"):
 		if _settings_panel and _settings_panel.visible:
 			_hide_settings()
 		elif _char_overlay and _char_overlay.visible:
 			_hide_char_selection()
-		elif _map_overlay and _map_overlay.visible:
-			_hide_map_selection()
 		elif _overlay and _overlay.visible:
 			_hide_overlay()
-		elif _auth_panel and _auth_panel.visible:
-			if _auth_panel.has_method("close"):
-				_auth_panel.close()
-			else:
-				_auth_panel.visible = false
-			_refresh_auth_ui()
 	elif event.is_action_pressed("ui_accept"):
 		if _settings_panel and _settings_panel.visible:
 			pass
 		elif _char_overlay and _char_overlay.visible:
 			_hide_char_selection()
-		elif _map_overlay and _map_overlay.visible:
-			_hide_map_selection()
 		elif _overlay and _overlay.visible:
 			_hide_overlay()
 		else:

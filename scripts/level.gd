@@ -1,9 +1,9 @@
 extends Node
 
-@onready var player: CharacterBody3D = $player_body
-@onready var spawn_timer: Timer = $spawn_timer
-@onready var spawn_env_timer: Timer = $spawn_env_timer
-@onready var spawn_obstacle_timer: Timer = $spawn_obstacle_timer
+var player: CharacterBody3D = null
+@onready var spawn_timer: Timer = get_node_or_null("spawn_timer")
+@onready var spawn_env_timer: Timer = get_node_or_null("spawn_env_timer")
+@onready var spawn_obstacle_timer: Timer = get_node_or_null("spawn_obstacle_timer")
 
 @onready var coin: PackedScene = preload("res://scenes/coin.tscn")
 @export_group("Map Assets")
@@ -81,7 +81,18 @@ var _bgm_player: AudioStreamPlayer
 
 func _ready():
 	add_to_group("level")
-	spawn_env_timer.stop()
+	if player == null:
+		player = get_node_or_null("player_body")
+	if spawn_env_timer:
+		spawn_env_timer.stop()
+		
+	if spawn_timer and not spawn_timer.timeout.is_connected(_on_spawn_timer_timeout):
+		spawn_timer.timeout.connect(_on_spawn_timer_timeout)
+	if spawn_env_timer and not spawn_env_timer.timeout.is_connected(_on_spawn_env_timer_timeout):
+		spawn_env_timer.timeout.connect(_on_spawn_env_timer_timeout)
+	if spawn_obstacle_timer and not spawn_obstacle_timer.timeout.is_connected(_on_spawn_obstacle_timer_timeout):
+		spawn_obstacle_timer.timeout.connect(_on_spawn_obstacle_timer_timeout)
+		
 	_setup_bgm()
 	if not BrowserBridge.page_backgrounded.is_connected(_on_page_background):
 		BrowserBridge.page_backgrounded.connect(_on_page_background)
@@ -89,10 +100,10 @@ func _ready():
 		BrowserBridge.page_foregrounded.connect(_on_page_foreground)
 	randomize()
 	if SimConstants.SECURE_SPAWNS:
-		spawn_timer.stop()
-		spawn_obstacle_timer.stop()
-		if not RunSession.checkpoint_resolved.is_connected(_on_checkpoint_resolved):
-			RunSession.checkpoint_resolved.connect(_on_checkpoint_resolved)
+		if spawn_timer:
+			spawn_timer.stop()
+		if spawn_obstacle_timer:
+			spawn_obstacle_timer.stop()
 	call_deferred("_deferred_level_boot")
 
 
@@ -108,9 +119,10 @@ func _deferred_level_boot() -> void:
 		street_names = ["No Name"]
 		
 	if fence == null:
-		fence = preload("res://models/cartoon-assets/fence.tscn")
+		fence = preload(
+			"res://models/city/barrier_fence.tscn")
 	if asphalt_mat == null:
-		asphalt_mat = preload("res://models/road_asphalt.tres")
+		asphalt_mat = preload("res://models/road_city.tres")
 		
 	_setup_road_segments()
 	_setup_fences()
@@ -177,7 +189,6 @@ func begin_run() -> void:
 func _boot_secure_segment() -> void:
 	if player == null:
 		return
-	RunSession.ensure_segment_for_level(player.current_lane)
 	_init_secure_segment()
 
 
@@ -186,7 +197,10 @@ func get_segment_distance() -> float:
 
 
 func get_scroll_speed() -> float:
-	return SimConstants.scroll_speed_at_sec(RunSession.run_scroll_elapsed_sec())
+	var base := SimConstants.scroll_speed_at_sec(RunManager.run_scroll_elapsed_sec())
+	if is_instance_valid(player) and "rocket_timer" in player and player.rocket_timer > 0.0:
+		return base * 2.0
+	return base
 
 
 func _game_stopped() -> bool:
@@ -234,7 +248,7 @@ func _halt_node(node: Node) -> void:
 
 func _init_secure_segment() -> void:
 	# New coin/rock map for this segment — scroll speed clock is unchanged.
-	_segment_spawns = SegmentMapGen.generate(RunSession.current_seed)
+	_segment_spawns = SegmentMapGen.generate(RunManager.current_seed)
 	_next_spawn_idx = 0
 	_segment_start_distance = run_distance
 	_checkpoint_busy = false
@@ -284,7 +298,7 @@ func _spawn_seeded_coin(entry: Dictionary) -> void:
 func _spawn_seeded_obstacle(entry: Dictionary) -> void:
 	if obstacle_templates.is_empty():
 		return
-	var rng := SeededRng.new(int(entry.object_id) + RunSession.current_seed)
+	var rng := SeededRng.new(int(entry.object_id) + RunManager.current_seed)
 	var idx: int = rng.randi_mod(obstacle_templates.size())
 	var mover := _make_mover(obstacle_templates[idx])
 	mover.add_to_group("obstacles")
@@ -320,7 +334,6 @@ func _on_checkpoint_resolved(accepted: bool, _data: Dictionary) -> void:
 		return
 	if player == null or player.is_dead or player.game_over:
 		return
-	RunSession.apply_next_segment(player.current_lane)
 	_init_secure_segment()
 
 
@@ -330,7 +343,6 @@ func _try_segment_checkpoint() -> void:
 	if get_segment_distance() < SimConstants.SEGMENT_LENGTH:
 		return
 	_checkpoint_busy = true
-	RunSession.submit_checkpoint(get_segment_distance())
 
 
 func _setup_road_segments() -> void:
@@ -383,8 +395,8 @@ func _setup_signs() -> void:
 func _on_sign_timer() -> void:
 	if _game_stopped():
 		return
-	var name: String = street_names[sign_index]
-	if name == "Lagaan" and has_special_arch:
+	var street_name: String = street_names[sign_index]
+	if street_name == "Lagaan" and has_special_arch:
 		_spawn_sign("Lagaan")
 		_spawn_concert_boards()
 		sign_index = (sign_index + 1) % street_names.size()
@@ -392,7 +404,7 @@ func _on_sign_timer() -> void:
 		var concert_travel: float = abs(concert_z) / get_scroll_speed()
 		sign_timer.wait_time = concert_travel + 4.0
 		return
-	_spawn_sign(name)
+	_spawn_sign(street_name)
 	sign_index = (sign_index + 1) % street_names.size()
 	sign_timer.wait_time = randf_range(7.5, 11.0)
 
@@ -731,9 +743,7 @@ func _add_concert_sign(root: Node3D, title: String, date_line: String, rot_y: fl
 func _load_nature() -> void:
 	if map_trees.is_empty():
 		var NATURE_TREES: Array = [
-			"res://models/nature/tree1.glb",
-			"res://models/nature/tree2.glb",
-			"res://models/nature/tree3.glb",
+			"res://models/city/streetlamp.tscn",
 		]
 		_collect(NATURE_TREES, tree_templates)
 	else:
@@ -743,8 +753,9 @@ func _load_nature() -> void:
 		
 	if map_obstacles.is_empty():
 		var OBSTACLE_MODELS: Array = [
-			"res://models/nature/rock1.glb",
-			"res://models/nature/rock2.glb",
+			"res://models/city/trash_can.tscn",
+			"res://models/city/fire_hydrant.tscn",
+			"res://models/city/jersey_barrier.tscn",
 		]
 		_collect(OBSTACLE_MODELS, obstacle_templates)
 	else:
@@ -1150,8 +1161,11 @@ func _scroll_fences(delta: float, speed: float) -> void:
 func _physics_process(_delta: float) -> void:
 	if _game_stopped():
 		return
+	var tree := get_tree()
+	if tree == null:
+		return
 	var pp: Vector3 = player.global_transform.origin
-	for r in get_tree().get_nodes_in_group("obstacles"):
+	for r in tree.get_nodes_in_group("obstacles"):
 		if not is_instance_valid(r):
 			continue
 		var rp: Vector3 = r.global_transform.origin
@@ -1164,6 +1178,15 @@ func _physics_process(_delta: float) -> void:
 				if pp.y >= JUMP_CLEAR_Y:
 					continue
 
+			# Power-Up mitigations: Rocket boost / invulnerability or shield absorption
+			if player.has_method("is_invulnerable") and player.is_invulnerable():
+				r.queue_free()
+				continue
+			if player.has_method("has_shield") and player.has_shield():
+				player.consume_shield()
+				r.queue_free()
+				continue
+
 			if SimConstants.SECURE_SPAWNS:
 				var oid: int = int(r.get_meta("object_id", -1))
 				var lane: int = int(r.get_meta("spawn_lane", _lane_index_from_x(rp.x)))
@@ -1171,10 +1194,9 @@ func _physics_process(_delta: float) -> void:
 				# Failed jump: jump_start is logged at takeoff; log land before crash so replay
 				# knows the player hit the obstacle low, not cleared it while airborne.
 				if player.is_jumping:
-					MoveLog.log_jump_land(dist)
-				MoveLog.log_collision(oid, lane, dist)
+					pass # TODO: log jump land before crash
 				player.die()
-				RunSession.submit_finish(dist, "collision")
+				RunManager.submit_finish(dist)
 			else:
 				player.die()
 			return

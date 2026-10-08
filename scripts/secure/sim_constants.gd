@@ -2,7 +2,8 @@ extends Node
 
 const SIM_VERSION: int = 11
 const CLIENT_BUILD: String = "dev"
-
+const API_BASE: String = ""
+const SECURE_SPAWNS: bool = false
 const NUM_LANES: int = 3
 const LANE_X: Array = [-2.0, 0.0, 2.0]
 
@@ -26,11 +27,8 @@ const COIN_SCORE: int = 1
 const DISTANCE_SCORE_PER_UNIT: float = 0.0
 const LOCAL_SCORE_PER_SEC: float = 0.0
 
-# Local dev: http://localhost:8080 — GitHub Pages CI replaces this at export time.
-const API_BASE: String = ""
-const OFFLINE_FALLBACK: bool = false
-const DEBUG_API: bool = false
-const SECURE_SPAWNS: bool = true
+
+
 
 const SPAWN_Z: float = -50.0
 const SPAWN_LEAD: float = 55.0
@@ -53,14 +51,14 @@ const EXTRA_COIN_BURST_MIN: int = 10
 const EXTRA_COIN_BURST_MAX: int = 16
 
 
-static func scroll_speed_at_sec(elapsed_sec: float) -> float:
+func scroll_speed_at_sec(elapsed_sec: float) -> float:
 	if elapsed_sec < 0.0:
 		elapsed_sec = 0.0
 	var tier: int = int(floor(elapsed_sec / SPEED_RAMP_INTERVAL_SEC))
 	return SCROLL_SPEED + float(tier) * SPEED_RAMP_INCREMENT
 
 
-static func duration_ms_for_distance(distance: float) -> float:
+func duration_ms_for_distance(distance: float) -> float:
 	if distance <= 0.0:
 		return 0.0
 	var remaining: float = distance
@@ -78,7 +76,7 @@ static func duration_ms_for_distance(distance: float) -> float:
 	return ms
 
 
-static func distance_at_duration_ms(duration_ms: int) -> float:
+func distance_at_duration_ms(duration_ms: int) -> float:
 	if duration_ms <= 0:
 		return 0.0
 	var elapsed: float = float(duration_ms) / 1000.0
@@ -91,7 +89,7 @@ static func distance_at_duration_ms(duration_ms: int) -> float:
 	return dist
 
 
-static func duration_ms_for_distance_from_start(distance: float, start_elapsed_sec: float) -> float:
+func duration_ms_for_distance_from_start(distance: float, start_elapsed_sec: float) -> float:
 	if distance <= 0.0:
 		return 0.0
 	var remaining: float = distance

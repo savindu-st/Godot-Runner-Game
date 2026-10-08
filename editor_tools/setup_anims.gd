@@ -28,7 +28,8 @@ func _init():
 	var anims = {
 		"run": "res://models/Leonard/running.res",
 		"jump": "res://models/Leonard/jump.res",
-		"slide": "res://models/Leonard/slide.res"
+		"slide": "res://models/Leonard/slide.res",
+		"standup": "res://models/Leonard/standup.res"
 	}
 	
 	for name in anims:

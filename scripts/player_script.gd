@@ -3,17 +3,14 @@ extends CharacterBody3D
 signal character_ready
 
 const CHARACTER_MODELS: Array[PackedScene] = [
-	preload("res://models/anime-girl/anime-girl.glb"),
-	preload("res://models/character2/character2.glb"),
-	preload("res://models/character3/character3.glb"),
 	preload("res://models/Leonard/character.tscn"),
 	preload("res://models/Remy/character.tscn")
 ]
 const COIN_SFX: AudioStream = preload("res://sounds/coinpickup.wav")
 
-@onready var audio_player: AudioStreamPlayer = $CoinSFX
-@onready var death_audio: AudioStreamPlayer = $DeathSFX
-@onready var camera: Camera3D = $Camera3D
+@onready var audio_player: AudioStreamPlayer = get_node_or_null("CoinSFX")
+@onready var death_audio: AudioStreamPlayer = get_node_or_null("DeathSFX")
+@onready var camera: Camera3D = get_node_or_null("Camera3D")
 
 var shake_intensity: float = 0.0
 var anim_player: AnimationPlayer
@@ -38,6 +35,7 @@ var jump_anim: String = ""
 var slide_anim: String = ""
 var death_anim: String = ""
 var dance_anim: String = ""
+var stand_anim: String = ""
 var is_jumping: bool = false
 var is_sliding: bool = false
 var slide_timer: float = 0.0
@@ -49,9 +47,14 @@ var game_over: bool = false
 var coin_count: int = 0
 
 var coin_label: Label
-var _name_label: Label
 var _best_label: Label
 var _dist_label: Label
+var _coin_sign: HudSign
+var _best_sign: HudSign
+var _dist_sign: HudSign
+var _last_dist_milestone: int = 0
+var _passed_high_score: bool = false
+var _start_btn_pulse: Tween
 var _back_btn: Button
 var overlay: Control
 var result_label: Label
@@ -74,6 +77,18 @@ var _character_ready: bool = false
 var _overlay_title: Label
 var _resume_btn: Button
 
+var magnet_timer: float = 0.0
+var shield_active: bool = false
+var rocket_timer: float = 0.0
+var doubler_timer: float = 0.0
+var invulnerable_timer: float = 0.0
+
+var _shield_mesh: MeshInstance3D
+var _shield_mat: StandardMaterial3D
+var _powerup_dock: Control
+var _powerup_slots: Dictionary = {}
+var _base_fov: float = 75.0
+
 const FINISH_WAIT_SEC: float = 22.0
 
 # swipe tracking
@@ -85,7 +100,8 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 
 	# rocks look for an area in this group to know they hit the player
-	$collision_area.add_to_group("player_skeleton")
+	if has_node("collision_area"):
+		$collision_area.add_to_group("player_skeleton")
 	call_deferred("_init_player")
 
 
@@ -102,15 +118,16 @@ func wait_for_character() -> void:
 func _init_player() -> void:
 	await _ensure_character()
 	ground_y = global_transform.origin.y
+	if camera:
+		_base_fov = camera.fov
 	_bind_anims()
 	_enter_attract_mode()
 	_setup_hud()
-	if not RunSession.checkpoint_resolved.is_connected(_on_checkpoint_resolved):
-		RunSession.checkpoint_resolved.connect(_on_checkpoint_resolved)
-	if not RunSession.finish_resolved.is_connected(_on_finish_resolved):
-		RunSession.finish_resolved.connect(_on_finish_resolved)
-	if not AuthSession.profile_updated.is_connected(_on_profile_updated):
-		AuthSession.profile_updated.connect(_on_profile_updated)
+	_setup_shield_mesh()
+	if not RunManager.finish_resolved.is_connected(_on_finish_resolved):
+		RunManager.finish_resolved.connect(_on_finish_resolved)
+	if not SaveManager.profile_updated.is_connected(_on_profile_updated):
+		SaveManager.profile_updated.connect(_on_profile_updated)
 	if death_audio:
 		death_audio.process_mode = Node.PROCESS_MODE_ALWAYS
 		death_audio.add_to_group("web_audio")
@@ -140,10 +157,6 @@ func _ensure_character() -> void:
 		_apply_character_transform(_character_model)
 
 	var tint := Color.WHITE
-	if GameSettings.selected_character_index == 1:
-		tint = Color(1.0, 0.4, 0.4)
-	elif GameSettings.selected_character_index == 2:
-		tint = Color(0.4, 0.6, 1.0)
 
 	for _attempt in 8:
 		if _character_model == null:
@@ -188,7 +201,7 @@ func _spawn_character_node() -> void:
 
 func _apply_character_transform(model: Node3D) -> void:
 	var s: float = 0.85
-	if GameSettings.selected_character_index == 4:
+	if GameSettings.selected_character_index == 1:
 		s = 0.4
 	model.transform = Transform3D(Basis(Vector3.UP, PI).scaled(Vector3(s, s, s)), Vector3.ZERO)
 
@@ -200,7 +213,7 @@ func _wire_animation_player() -> void:
 	if anim_player == null:
 		anim_player = _character_model.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	
-	if GameSettings.selected_character_index == 4 and anim_player:
+	if GameSettings.selected_character_index == 1 and anim_player:
 		for lib_name in anim_player.get_animation_library_list():
 			var lib = anim_player.get_animation_library(lib_name)
 			var new_lib = AnimationLibrary.new()
@@ -261,20 +274,23 @@ func _setup_hud() -> void:
 	_hud_layer.process_mode = Node.PROCESS_MODE_ALWAYS
 	add_child(_hud_layer)
 
-	# Top bar — menu on row 1 left; username row 2 left; best + coins stacked right.
-	_name_label = _make_hud_label(_hud_layer, HORIZONTAL_ALIGNMENT_LEFT, Color(0.4, 0.8, 1.0)) # Neon blue
-	_name_label.add_theme_font_size_override("font_size", BrowserBridge.hud_hint_font() + 2)
-	coin_label = _make_hud_label(_hud_layer, HORIZONTAL_ALIGNMENT_RIGHT, Color(1, 0.86, 0.32)) # Neon yellow
-	coin_label.add_theme_font_size_override("font_size", BrowserBridge.hud_font() + 2)
-	coin_label.text = "0"
-	_best_label = _make_hud_label(_hud_layer, HORIZONTAL_ALIGNMENT_RIGHT, Color(0.9, 0.7, 0.1)) # Darker neon yellow
-	_best_label.add_theme_font_size_override("font_size", BrowserBridge.hud_hint_font() + 2)
-	
-	_dist_label = _make_hud_label(_hud_layer, HORIZONTAL_ALIGNMENT_RIGHT, Color(0.4, 0.9, 0.6)) # Neon green
-	_dist_label.add_theme_font_size_override("font_size", BrowserBridge.hud_font())
-	_dist_label.text = "0m"
+	# Subway Surfers style signs
+	_best_sign = HudSign.create_sign(HudSign.SignType.BEST, "Best 0")
+	_hud_layer.add_child(_best_sign)
+	_best_label = _best_sign.label
+	_best_sign.start_idle_wobble()
+
+	_coin_sign = HudSign.create_sign(HudSign.SignType.COIN, "0")
+	_hud_layer.add_child(_coin_sign)
+	coin_label = _coin_sign.label
+	_coin_sign.start_idle_wobble()
+
+	_dist_sign = HudSign.create_sign(HudSign.SignType.DISTANCE, "0m")
+	_hud_layer.add_child(_dist_sign)
+	_dist_label = _dist_sign.label
 
 	_setup_back_button(_hud_layer)
+	_setup_powerup_hud(_hud_layer)
 
 	# ---- full-screen game-over overlay (dim + centered card) ----
 	overlay = Control.new()
@@ -308,12 +324,18 @@ func _setup_hud() -> void:
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	box.add_theme_constant_override("separation", 20)
 
+	var font = HudSign.get_hud_font()
+
 	_overlay_title = Label.new()
 	box.add_child(_overlay_title)
 	_overlay_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_overlay_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	if font:
+		_overlay_title.add_theme_font_override("font", font)
 	_overlay_title.add_theme_font_size_override("font_size", BrowserBridge.popup_title_font() + 8)
 	_overlay_title.add_theme_color_override("font_color", Color(1, 0.32, 0.28))
+	_overlay_title.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+	_overlay_title.add_theme_constant_override("outline_size", 10)
 	_overlay_title.text = "GAME OVER"
 
 	result_label = Label.new()
@@ -321,8 +343,12 @@ func _setup_hud() -> void:
 	result_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	result_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	result_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	if font:
+		result_label.add_theme_font_override("font", font)
 	result_label.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font() + 4)
 	result_label.add_theme_color_override("font_color", Color(0.92, 0.96, 1.0))
+	result_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+	result_label.add_theme_constant_override("outline_size", 8)
 	result_label.text = "Score 0     Coins 0"
 
 	box.add_child(_spacer(12))
@@ -331,6 +357,8 @@ func _setup_hud() -> void:
 	box.add_child(_resume_btn)
 	_resume_btn.custom_minimum_size = Vector2(0, BrowserBridge.popup_button_height())
 	_resume_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if font:
+		_resume_btn.add_theme_font_override("font", font)
 	_resume_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font())
 	_resume_btn.text = "RESUME"
 	var resume_color := Color(0.3, 0.9, 0.5)
@@ -346,6 +374,8 @@ func _setup_hud() -> void:
 	box.add_child(_play_again_btn)
 	_play_again_btn.custom_minimum_size = Vector2(0, BrowserBridge.popup_button_height())
 	_play_again_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if font:
+		_play_again_btn.add_theme_font_override("font", font)
 	_play_again_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font())
 	_play_again_btn.text = "RESTART GAME"
 	var restart_color := Color(0.92, 0.95, 1.0)
@@ -360,6 +390,8 @@ func _setup_hud() -> void:
 	box.add_child(_menu_btn)
 	_menu_btn.custom_minimum_size = Vector2(0, BrowserBridge.popup_button_height() - 8)
 	_menu_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if font:
+		_menu_btn.add_theme_font_override("font", font)
 	_menu_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font())
 	var menu_color := Color(0.85, 0.72, 0.35)
 	_menu_btn.add_theme_color_override("font_color", menu_color)
@@ -379,12 +411,38 @@ func _setup_back_button(layer: CanvasLayer) -> void:
 	_back_btn = Button.new()
 	layer.add_child(_back_btn)
 	_back_btn.text = ""
-	_back_btn.icon = _make_back_icon()
+	if ResourceLoader.exists("res://assets/ui/hud_pause.png"):
+		_back_btn.icon = load("res://assets/ui/hud_pause.png")
+	else:
+		_back_btn.icon = _make_back_icon()
 	_back_btn.expand_icon = true
-	_back_btn.add_theme_constant_override("icon_max_width", 24)
-	_back_btn.add_theme_stylebox_override("normal", _pill_style(Color(0.1, 0.12, 0.18, 0.88)))
-	_back_btn.add_theme_stylebox_override("hover", _pill_style(Color(0.14, 0.16, 0.24, 0.92)))
-	_back_btn.add_theme_stylebox_override("pressed", _pill_style(Color(0.08, 0.1, 0.15, 0.95)))
+	_back_btn.add_theme_constant_override("icon_max_width", 26)
+
+	var normal_sb := _circle_btn_style(Color(0.25, 0.8, 1.0, 0.85), Color(0.06, 0.08, 0.12, 0.85))
+	var hover_sb := _circle_btn_style(Color(0.45, 0.9, 1.0, 0.95), Color(0.1, 0.14, 0.22, 0.9))
+	var pressed_sb := _circle_btn_style(Color(0.2, 0.65, 0.85, 0.95), Color(0.04, 0.06, 0.1, 0.95))
+
+	_back_btn.add_theme_stylebox_override("normal", normal_sb)
+	_back_btn.add_theme_stylebox_override("hover", hover_sb)
+	_back_btn.add_theme_stylebox_override("pressed", pressed_sb)
+
+	_back_btn.pivot_offset = Vector2(24, 24)
+	_back_btn.mouse_entered.connect(func():
+		var t = create_tween()
+		t.tween_property(_back_btn, "scale", Vector2(1.08, 1.08), 0.1).set_trans(Tween.TRANS_QUAD)
+	)
+	_back_btn.mouse_exited.connect(func():
+		var t = create_tween()
+		t.tween_property(_back_btn, "scale", Vector2(1.0, 1.0), 0.15).set_trans(Tween.TRANS_QUAD)
+	)
+	_back_btn.button_down.connect(func():
+		var t = create_tween()
+		t.tween_property(_back_btn, "scale", Vector2(0.92, 0.92), 0.05).set_trans(Tween.TRANS_QUAD)
+	)
+	_back_btn.button_up.connect(func():
+		var t = create_tween()
+		t.tween_property(_back_btn, "scale", Vector2(1.0, 1.0), 0.1).set_trans(Tween.TRANS_QUAD)
+	)
 	_back_btn.pressed.connect(_on_back_pressed)
 
 
@@ -395,7 +453,7 @@ func _on_back_pressed() -> void:
 		if game_over:
 			_go_menu()
 			return
-		RunSession.run_active = false
+		RunManager.run_active = false
 		var level := get_tree().get_first_node_in_group("level")
 		if level and level.has_method("freeze_world"):
 			level.freeze_world()
@@ -434,23 +492,26 @@ func _setup_start_prompt(layer: CanvasLayer) -> void:
 	_start_btn = Button.new()
 	_start_overlay.add_child(_start_btn)
 	_start_btn.set_anchors_preset(Control.PRESET_CENTER)
-	_start_btn.offset_top = -30.0
-	_start_btn.offset_bottom = 30.0
-	_start_btn.offset_left = -130.0
-	_start_btn.offset_right = 130.0
-	_start_btn.custom_minimum_size = Vector2(260, BrowserBridge.popup_button_height())
-	_start_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font() + 2)
-	_start_btn.text = "START"
-	var neon_green = Color(0.16, 0.9, 0.6)
+	_start_btn.offset_top = -32.0
+	_start_btn.offset_bottom = 32.0
+	_start_btn.offset_left = -140.0
+	_start_btn.offset_right = 140.0
+	_start_btn.custom_minimum_size = Vector2(280, BrowserBridge.popup_button_height())
+	var font = HudSign.get_hud_font()
+	if font:
+		_start_btn.add_theme_font_override("font", font)
+	_start_btn.add_theme_font_size_override("font_size", BrowserBridge.popup_body_font() + 4)
+	_start_btn.text = "TAP TO RUN"
+	var neon_green = Color(0.16, 0.92, 0.6)
 	_start_btn.add_theme_stylebox_override("normal", _pill_style(neon_green))
 	_start_btn.add_theme_stylebox_override("hover", _pill_style(neon_green.lightened(0.2)))
 	_start_btn.add_theme_stylebox_override("pressed", _pill_style(neon_green.darkened(0.2)))
 	_start_btn.add_theme_color_override("font_color", neon_green)
 	
-	_start_btn.pivot_offset = _start_btn.custom_minimum_size / 2.0
+	_start_btn.pivot_offset = Vector2(140.0, float(BrowserBridge.popup_button_height()) / 2.0)
 	_start_btn.mouse_entered.connect(func():
 		var t = create_tween()
-		t.tween_property(_start_btn, "scale", Vector2(1.05, 1.05), 0.1).set_trans(Tween.TRANS_QUAD)
+		t.tween_property(_start_btn, "scale", Vector2(1.08, 1.08), 0.1).set_trans(Tween.TRANS_QUAD)
 	)
 	_start_btn.mouse_exited.connect(func():
 		var t = create_tween()
@@ -458,29 +519,33 @@ func _setup_start_prompt(layer: CanvasLayer) -> void:
 	)
 	_start_btn.button_down.connect(func():
 		var t = create_tween()
-		t.tween_property(_start_btn, "scale", Vector2(0.95, 0.95), 0.05).set_trans(Tween.TRANS_QUAD)
+		t.tween_property(_start_btn, "scale", Vector2(0.92, 0.92), 0.05).set_trans(Tween.TRANS_QUAD)
 	)
 	_start_btn.button_up.connect(func():
 		var t = create_tween()
 		t.tween_property(_start_btn, "scale", Vector2(1.0, 1.0), 0.1).set_trans(Tween.TRANS_QUAD)
 	)
-	
 	_start_btn.pressed.connect(_on_start_pressed)
 
 	_countdown_label = Label.new()
 	_start_overlay.add_child(_countdown_label)
 	_countdown_label.set_anchors_preset(Control.PRESET_CENTER)
-	_countdown_label.offset_top = -40.0
-	_countdown_label.offset_bottom = 40.0
-	_countdown_label.offset_left = -160.0
-	_countdown_label.offset_right = 160.0
+	_countdown_label.offset_top = -60.0
+	_countdown_label.offset_bottom = 60.0
+	_countdown_label.offset_left = -200.0
+	_countdown_label.offset_right = 200.0
 	_countdown_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_countdown_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_countdown_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_countdown_label.add_theme_font_size_override("font_size", BrowserBridge.popup_title_font() + 36)
+	if font:
+		_countdown_label.add_theme_font_override("font", font)
+	_countdown_label.add_theme_font_size_override("font_size", 84)
 	_countdown_label.add_theme_color_override("font_color", Color(1, 0.92, 0.35))
-	_countdown_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
-	_countdown_label.add_theme_constant_override("outline_size", 12)
+	_countdown_label.add_theme_color_override("font_outline_color", Color(0.04, 0.02, 0.01, 0.95))
+	_countdown_label.add_theme_constant_override("outline_size", 14)
+	_countdown_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	_countdown_label.add_theme_constant_override("shadow_offset_y", 4)
+	_countdown_label.pivot_offset = Vector2(200.0, 60.0)
 	_countdown_label.visible = false
 
 
@@ -490,6 +555,8 @@ func _enter_attract_mode() -> void:
 	dying = false
 	game_over = false
 	coin_count = 0
+	_passed_high_score = false
+	_last_dist_milestone = 0
 	_finish_data = {}
 	_finish_done = false
 	_finish_success = false
@@ -502,14 +569,26 @@ func _enter_attract_mode() -> void:
 	if _start_btn:
 		_start_btn.disabled = false
 		_start_btn.visible = true
+		if _start_btn_pulse and _start_btn_pulse.is_valid():
+			_start_btn_pulse.kill()
+		_start_btn_pulse = create_tween().set_loops()
+		_start_btn_pulse.tween_property(_start_btn, "scale", Vector2(1.05, 1.05), 0.65).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		_start_btn_pulse.tween_property(_start_btn, "scale", Vector2(1.0, 1.0), 0.65).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	if _countdown_label:
 		_countdown_label.visible = false
 	_countdown_running = false
 	_run_aborted = false
-	if _dist_label:
+	if _dist_sign:
+		_dist_sign.set_text("0m")
+	elif _dist_label:
 		_dist_label.text = "0m"
-	var idle_anim: String = dance_anim if dance_anim != "" else run_anim
-	_play_anim(idle_anim, true)
+	if stand_anim != "" and anim_player:
+		_play_anim(stand_anim, false, 0.0)
+		anim_player.seek(0.0, true)
+		anim_player.pause()
+	else:
+		var idle_anim: String = dance_anim if dance_anim != "" else run_anim
+		_play_anim(idle_anim, true)
 
 
 func _on_start_pressed() -> void:
@@ -520,6 +599,8 @@ func _on_start_pressed() -> void:
 	if level and level.has_method("begin_run"):
 		level.begin_run()
 	_countdown_running = true
+	if _start_btn_pulse and _start_btn_pulse.is_valid():
+		_start_btn_pulse.kill()
 	if _start_btn:
 		_start_btn.disabled = true
 		_start_btn.visible = false
@@ -529,25 +610,91 @@ func _on_start_pressed() -> void:
 		return
 	game_started = true
 	_countdown_running = false
-	RunSession.mark_run_scroll_started()
+	RunManager.mark_run_scroll_started()
 	if _start_overlay:
 		_start_overlay.visible = false
-	_play_anim(run_anim, true)
+	_play_anim(run_anim, true, 0.2)
 
 
 func _run_start_countdown() -> void:
 	if _countdown_label == null:
 		return
 	_countdown_label.visible = true
+	if stand_anim != "" and anim_player:
+		var s_anim: Animation = anim_player.get_animation(stand_anim)
+		var custom_speed: float = 1.0
+		# The 4 countdown steps take: 3 * 0.85 + 0.65 = 3.20 seconds total
+		if s_anim and s_anim.length > 0.0:
+			custom_speed = s_anim.length / 3.20
+		_play_anim(stand_anim, false, 0.1, custom_speed)
 	var steps: PackedStringArray = PackedStringArray(["3", "2", "1", "GO!"])
+	var step_colors := [
+		Color(1.0, 0.35, 0.25),  # "3" Coral red
+		Color(1.0, 0.75, 0.15),  # "2" Golden orange
+		Color(0.2, 0.85, 1.0),   # "1" Electric cyan
+		Color(0.3, 1.0, 0.45)    # "GO!" Hyper lime
+	]
+	
 	for i in steps.size():
 		if _run_aborted or not is_inside_tree():
 			break
-		_countdown_label.text = steps[i]
-		var wait_sec: float = 0.65 if steps[i] == "GO!" else 0.85
+		var step_text: String = steps[i]
+		_countdown_label.text = step_text
+		_countdown_label.add_theme_color_override("font_color", step_colors[i])
+		_countdown_label.pivot_offset = _countdown_label.size / 2.0
+		
+		# Bouncy elastic zoom-in animation
+		_countdown_label.scale = Vector2(2.4, 2.4)
+		_countdown_label.rotation = deg_to_rad(-8.0 if i % 2 == 0 else 8.0)
+		_countdown_label.modulate.a = 1.0
+		
+		var t := create_tween()
+		t.set_parallel(true)
+		t.tween_property(_countdown_label, "scale", Vector2(1.0, 1.0), 0.26).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		t.tween_property(_countdown_label, "rotation", 0.0, 0.26).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		
+		var wait_sec: float = 0.65 if step_text == "GO!" else 0.85
+		t.chain().tween_property(_countdown_label, "modulate:a", 0.25, wait_sec - 0.26)
 		await get_tree().create_timer(wait_sec).timeout
+		
 	if _countdown_label and is_inside_tree():
 		_countdown_label.visible = false
+		_countdown_label.modulate.a = 1.0
+
+
+func _spawn_floating_coin_popup(txt: String = "+1") -> void:
+	if not is_inside_tree() or _hud_layer == null:
+		return
+	var pop := Label.new()
+	_hud_layer.add_child(pop)
+	pop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pop.text = txt
+	var font = HudSign.get_hud_font()
+	if font:
+		pop.add_theme_font_override("font", font)
+	pop.add_theme_font_size_override("font_size", 28)
+	pop.add_theme_color_override("font_color", Color(1.0, 0.95, 0.35))
+	pop.add_theme_color_override("font_outline_color", Color(0.15, 0.08, 0.0, 0.95))
+	pop.add_theme_constant_override("outline_size", 8)
+	pop.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.5))
+	pop.add_theme_constant_override("shadow_offset_y", 2)
+	
+	var base_pos: Vector2
+	if _coin_sign:
+		base_pos = _coin_sign.position + Vector2(-15.0, 4.0)
+	else:
+		base_pos = Vector2(get_viewport().get_visible_rect().size.x - 140.0, 75.0)
+	
+	pop.position = base_pos
+	pop.scale = Vector2(0.5, 0.5)
+	pop.pivot_offset = Vector2(16, 14)
+	
+	var t := create_tween()
+	t.set_parallel(true)
+	t.tween_property(pop, "scale", Vector2(1.2, 1.2), 0.14).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.tween_property(pop, "position", base_pos + Vector2(-12.0, -32.0), 0.52).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	t.tween_property(pop, "modulate:a", 0.0, 0.52).set_ease(Tween.EASE_IN)
+	t.chain().tween_callback(pop.queue_free)
 
 
 func _make_hud_label(parent: Node, align: HorizontalAlignment, color: Color) -> Label:
@@ -558,6 +705,9 @@ func _make_hud_label(parent: Node, align: HorizontalAlignment, color: Color) -> 
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.clip_text = false
 	label.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+	var font = HudSign.get_hud_font()
+	if font:
+		label.add_theme_font_override("font", font)
 	label.add_theme_font_size_override("font_size", BrowserBridge.hud_font())
 	label.add_theme_color_override("font_color", color)
 	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
@@ -578,81 +728,101 @@ func _layout_hud_panels() -> void:
 	if width <= 0.0:
 		width = 720.0
 
-	var pad_left := maxf(BrowserBridge.popup_edge_margin() + 16.0, 28.0)
-	var pad_right := maxf(BrowserBridge.popup_edge_margin() + 16.0, 28.0)
-	var pad_top := 24.0
-	var menu_size := 44.0
-	var row_h := 34.0
-	var row_gap := 10.0
-	var col_gap := 16.0
-	var right_w := 300.0
-	var right_x := width - pad_right - right_w
-	
+	var pad_left := maxf(BrowserBridge.popup_edge_margin() + 16.0, 24.0)
+	var pad_right := maxf(BrowserBridge.popup_edge_margin() + 16.0, 24.0)
+	var pad_top := 22.0
+	var menu_size := 48.0
+	var right_edge := width - pad_right
+	var row_h := 44.0
+	var row_gap := 8.0
+
+	# Top-left: Pause/Back Button + Player Name Tag
 	if _back_btn:
 		_back_btn.position = Vector2(pad_left, pad_top)
 		_back_btn.size = Vector2(menu_size, menu_size)
+		_back_btn.pivot_offset = Vector2(menu_size / 2.0, menu_size / 2.0)
 
-	var name_top := pad_top + menu_size + row_gap
-	var name_w := maxf(72.0, right_x - pad_left - col_gap)
-	if _name_label:
-		_name_label.position = Vector2(pad_left, name_top)
-		_name_label.size = Vector2(name_w, row_h + 4.0)
+	# Top-right: Stacked Subway Surfers signs
+	if _best_sign:
+		_best_sign.align_right(right_edge, pad_top)
+	elif _best_label:
+		_best_label.position = Vector2(width - pad_right - 300.0, pad_top)
 
-	if _best_label:
-		_best_label.position = Vector2(right_x, pad_top)
-		_best_label.size = Vector2(right_w, row_h)
-		_best_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	if _coin_sign:
+		_coin_sign.align_right(right_edge, pad_top + row_h + row_gap)
+	elif coin_label:
+		coin_label.position = Vector2(width - pad_right - 300.0, pad_top + row_h + 4.0)
 
-	if coin_label:
-		coin_label.position = Vector2(right_x, pad_top + row_h + 4.0)
-		coin_label.size = Vector2(right_w, row_h + 2.0)
-		coin_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	if _dist_sign:
+		_dist_sign.align_right(right_edge, pad_top + (row_h + row_gap) * 2.0)
+	elif _dist_label:
+		_dist_label.position = Vector2(width - pad_right - 300.0, pad_top + (row_h + 4.0) * 2.0)
 
-	if _dist_label:
-		_dist_label.position = Vector2(right_x, pad_top + (row_h + 4.0) * 2)
-		_dist_label.size = Vector2(right_w, row_h + 2.0)
-		_dist_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	if _powerup_dock:
+		var height := get_viewport().get_visible_rect().size.y
+		if height <= 0.0:
+			height = float(get_viewport().size.y)
+		if height <= 0.0:
+			height = 1280.0
+		var dock_w := 260.0
+		var dock_h := 68.0
+		var dock_x := (width - dock_w) / 2.0
+		var dock_y := height - dock_h - 16.0
+		_powerup_dock.position = Vector2(dock_x, dock_y)
+		_powerup_dock.size = Vector2(dock_w, dock_h)
+
 
 func _refresh_coin_hud() -> void:
-	if coin_label:
-		if coin_label.text != str(coin_count):
-			coin_label.text = str(coin_count)
-			var t := create_tween()
-			coin_label.pivot_offset = coin_label.size / 2.0
-			coin_label.scale = Vector2(1.3, 1.3)
-			t.tween_property(coin_label, "scale", Vector2(1.0, 1.0), 0.3).set_trans(Tween.TRANS_SPRING).set_ease(Tween.EASE_OUT)
+	if _coin_sign:
+		var current_str := str(coin_count)
+		if _coin_sign.get_text() != current_str:
+			_coin_sign.set_text(current_str)
+			_coin_sign.bounce(1.35)
+			var pop_text: String = "+2" if doubler_timer > 0.0 else "+1"
+			_spawn_floating_coin_popup(pop_text)
 		else:
-			coin_label.text = str(coin_count)
+			_coin_sign.set_text(current_str)
+		var width := get_viewport().get_visible_rect().size.x
+		if width <= 0.0: width = 720.0
+		var pad_right := maxf(BrowserBridge.popup_edge_margin() + 16.0, 24.0)
+		_coin_sign.align_right(width - pad_right, 22.0 + 44.0 + 8.0)
+	elif coin_label:
+		coin_label.text = str(coin_count)
+
 	var show_hud := true
-	if _name_label:
-		_name_label.visible = show_hud
-	if _best_label:
-		_best_label.visible = show_hud
-	if _dist_label:
-		_dist_label.visible = show_hud
+	if _best_sign: _best_sign.visible = show_hud
+	if _dist_sign: _dist_sign.visible = show_hud
+	if _best_label and not _best_sign: _best_label.visible = show_hud
+	if _dist_label and not _dist_sign: _dist_label.visible = show_hud
+
 	if not show_hud:
 		return
-	var player_name := AuthSession.username.strip_edges()
-	if player_name == "":
-		player_name = AuthSession.index_number.strip_edges()
-	if player_name == "":
-		player_name = "Guest"
-	if _name_label:
-		_name_label.text = player_name
-	if _best_label:
-		_best_label.text = "Best %d" % AuthSession.best_coins
+
+
+
+	var best_text := "Best %d" % SaveManager.best_coins
+	if _best_sign:
+		_best_sign.set_text(best_text)
+		var width := get_viewport().get_visible_rect().size.x
+		if width <= 0.0: width = 720.0
+		var pad_right := maxf(BrowserBridge.popup_edge_margin() + 16.0, 24.0)
+		_best_sign.align_right(width - pad_right, 22.0)
+		
+		# Check if beaten personal best during this run!
+		if SaveManager.best_coins > 0 and coin_count > SaveManager.best_coins and not _passed_high_score:
+			_passed_high_score = true
+			_best_sign.bounce(1.4)
+			_best_sign.flash_celebrate(Color(1.6, 1.4, 0.4, 1.0))
+			_spawn_floating_coin_popup("NEW BEST!")
+	elif _best_label:
+		_best_label.text = best_text
 
 
 func _on_profile_updated(_body: Dictionary) -> void:
 	_refresh_coin_hud()
 
 
-func _on_checkpoint_resolved(accepted: bool, data: Dictionary) -> void:
-	if is_dead or dying or game_over:
-		return
-	if accepted:
-		coin_count = int(data.get("run_total_coins", coin_count))
-		_refresh_coin_hud()
+
 
 
 func _on_finish_resolved(success: bool, data: Dictionary) -> void:
@@ -697,6 +867,18 @@ func _pill_style(c: Color) -> StyleBoxFlat:
 	return sb
 
 
+func _circle_btn_style(border_color: Color, bg_color: Color) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = bg_color
+	sb.set_corner_radius_all(24)
+	sb.set_border_width_all(2)
+	sb.border_color = border_color
+	sb.shadow_size = 6
+	sb.shadow_color = border_color * Color(1, 1, 1, 0.3)
+	sb.shadow_offset = Vector2(0, 2)
+	return sb
+
+
 func _make_back_icon() -> ImageTexture:
 	var px := 32
 	var img := Image.create(px, px, false, Image.FORMAT_RGBA8)
@@ -732,6 +914,7 @@ func _bind_anims() -> void:
 	slide_anim = _find_anim(["slide", "duck", "roll"])
 	death_anim = _find_anim(["death", "fall"])
 	dance_anim = _find_anim(["danc", "dance"])
+	stand_anim = _find_anim(["standup", "stand_up", "standing up", "standing", "stand"])
 
 
 func _find_anim(keywords: Array) -> String:
@@ -743,13 +926,13 @@ func _find_anim(keywords: Array) -> String:
 	return ""
 
 
-func _play_anim(anim_name: String, loop: bool, blend_time: float = 0.15) -> void:
+func _play_anim(anim_name: String, loop: bool, blend_time: float = 0.15, custom_speed: float = 1.0) -> void:
 	if anim_name == "" or anim_player == null:
 		return
 	var anim: Animation = anim_player.get_animation(anim_name)
 	if anim:
 		anim.loop_mode = Animation.LOOP_LINEAR if loop else Animation.LOOP_NONE
-	anim_player.play(anim_name, blend_time)
+	anim_player.play(anim_name, blend_time, custom_speed)
 
 # --- input: swipe to change lane / jump, tap to restart ---------------------
 func _unhandled_input(event: InputEvent) -> void:
@@ -766,6 +949,17 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if game_over or not game_started:
 		return
+
+	if event is InputEventKey and event.pressed and not event.echo:
+		match event.keycode:
+			KEY_1:
+				_try_activate_powerup("coin_magnet")
+			KEY_2:
+				_try_activate_powerup("shield")
+			KEY_3:
+				_try_activate_powerup("rocket_boost")
+			KEY_4:
+				_try_activate_powerup("coin_doubler")
 
 	if event is InputEventScreenTouch:
 		if event.pressed:
@@ -800,23 +994,20 @@ func _change_lane(dir: int) -> void:
 	current_lane = clampi(current_lane + dir, 0, LANE_X.size() - 1)
 	if old_lane == current_lane:
 		return
-	var level := get_tree().get_first_node_in_group("level")
-	if level and level.has_method("get_segment_distance") and MoveLog.can_log_lane_change():
-		MoveLog.log_lane_change(old_lane, current_lane, level.get_segment_distance())
 
 func _restart() -> void:
 	get_tree().paused = false
 	if SimConstants.API_BASE.is_empty():
-		RunSession.restart_run()
+		RunManager.restart_run()
 		get_tree().reload_current_scene()
 		return
-	if RunSession.run_ready.is_connected(_on_restart_run_ready):
-		RunSession.run_ready.disconnect(_on_restart_run_ready)
-	RunSession.run_ready.connect(_on_restart_run_ready, CONNECT_ONE_SHOT)
-	RunSession.restart_run()
+	if RunManager.run_ready.is_connected(_on_restart_run_ready):
+		RunManager.run_ready.disconnect(_on_restart_run_ready)
+	RunManager.run_ready.connect(_on_restart_run_ready, CONNECT_ONE_SHOT)
+	RunManager.restart_run()
 
 
-func _on_restart_run_ready(success: bool, error_message: String) -> void:
+func _on_restart_run_ready(success: bool, _error_message: String) -> void:
 	if success:
 		get_tree().reload_current_scene()
 		return
@@ -838,8 +1029,23 @@ func _process(delta: float) -> void:
 	if camera and game_started and not game_over:
 		var level = get_tree().get_first_node_in_group("level")
 		if level:
-			if _dist_label and "run_distance" in level:
-				_dist_label.text = "%dm" % int(level.run_distance / 2.0)
+			if "run_distance" in level:
+				var cur_dist: int = int(level.run_distance / 2.0)
+				var dist_text: String = "%dm" % cur_dist
+				if _dist_sign:
+					if _dist_sign.get_text() != dist_text:
+						_dist_sign.set_text(dist_text)
+						var milestone: int = int(cur_dist / 100.0)
+						if milestone > _last_dist_milestone and cur_dist > 0:
+							_last_dist_milestone = milestone
+							_dist_sign.bounce(1.25)
+							_dist_sign.flash_celebrate(Color(0.5, 1.5, 0.8, 1.0))
+						var width := get_viewport().get_visible_rect().size.x
+						if width <= 0.0: width = 720.0
+						var pad_right := maxf(BrowserBridge.popup_edge_margin() + 16.0, 24.0)
+						_dist_sign.align_right(width - pad_right, 22.0 + (44.0 + 8.0) * 2.0)
+				elif _dist_label:
+					_dist_label.text = dist_text
 				
 			if level.has_method("get_scroll_speed"):
 				var speed = level.get_scroll_speed()
@@ -879,6 +1085,48 @@ func _physics_process(delta: float) -> void:
 	if not game_started:
 		return
 
+	# Power-up timer countdowns
+	if magnet_timer > 0.0:
+		magnet_timer = maxf(0.0, magnet_timer - delta)
+	if rocket_timer > 0.0:
+		rocket_timer = maxf(0.0, rocket_timer - delta)
+	if doubler_timer > 0.0:
+		doubler_timer = maxf(0.0, doubler_timer - delta)
+	if invulnerable_timer > 0.0:
+		invulnerable_timer = maxf(0.0, invulnerable_timer - delta)
+
+	if magnet_timer > 0.0 or rocket_timer > 0.0 or doubler_timer > 0.0:
+		_update_powerup_dock()
+
+	if shield_active and _shield_mesh:
+		_shield_mesh.rotate_y(2.0 * delta)
+
+	if invulnerable_timer > 0.0:
+		var blink := fmod(invulnerable_timer, 0.2) < 0.1
+		if _character_model:
+			_character_model.visible = blink
+	elif _character_model and not _character_model.visible and not is_dead:
+		_character_model.visible = true
+
+	# Magnet / Rocket coin attraction
+	if magnet_timer > 0.0 or rocket_timer > 0.0:
+		var pull_radius: float = 26.0 if rocket_timer > 0.0 else 18.0
+		var pull_radius_sq: float = pull_radius * pull_radius
+		var pp := global_transform.origin
+		for coin in get_tree().get_nodes_in_group("coins"):
+			if not is_instance_valid(coin) or coin.get("_collected"):
+				continue
+			var cp: Vector3 = coin.global_transform.origin
+			var diff := cp - pp
+			if diff.length_squared() < pull_radius_sq:
+				var pull_speed: float = 24.0 if rocket_timer > 0.0 else 16.0
+				coin.global_transform.origin = cp.move_toward(pp, pull_speed * delta)
+
+	# Rocket camera FOV punch
+	if camera:
+		var target_fov: float = _base_fov + 8.0 if rocket_timer > 0.0 else _base_fov
+		camera.fov = move_toward(camera.fov, target_fov, 24.0 * delta)
+
 	# keyboard fallback so it's also playable on desktop
 	if Input.is_action_just_pressed("move_left") or Input.is_action_just_pressed("ui_left"):
 		_change_lane(-1)
@@ -902,9 +1150,7 @@ func _physics_process(delta: float) -> void:
 		is_jumping = true
 		if is_sliding:
 			is_sliding = false
-		var level := get_tree().get_first_node_in_group("level")
-		if level and level.has_method("get_segment_distance"):
-			MoveLog.log_jump_start(level.get_segment_distance())
+
 		if jump_anim != "":
 			_play_anim(jump_anim, false)
 	jump_requested = false
@@ -925,18 +1171,24 @@ func _physics_process(delta: float) -> void:
 			_play_anim(run_anim, true)
 	slide_requested = false
 
-	# gravity + vertical move (no floor collider, handled manually)
-	vertical_velocity -= GRAVITY * delta
-	pos.y += vertical_velocity * delta
-	if pos.y <= ground_y:
-		pos.y = ground_y
+	# Rocket hover vs normal gravity + vertical move
+	if rocket_timer > 0.0:
+		pos.y = move_toward(pos.y, ground_y + 1.2, 8.0 * delta)
 		vertical_velocity = 0.0
 		if is_jumping:
 			is_jumping = false
-			var level := get_tree().get_first_node_in_group("level")
-			if level and level.has_method("get_segment_distance"):
-				MoveLog.log_jump_land(level.get_segment_distance())
 			_transition_to_run_after_jump()
+	else:
+		# gravity + vertical move (no floor collider, handled manually)
+		vertical_velocity -= GRAVITY * delta
+		pos.y += vertical_velocity * delta
+		if pos.y <= ground_y:
+			pos.y = ground_y
+			vertical_velocity = 0.0
+			if is_jumping:
+				is_jumping = false
+
+				_transition_to_run_after_jump()
 
 	global_transform.origin = pos
 
@@ -944,6 +1196,14 @@ func die() -> void:
 	if is_dead:
 		return
 	is_dead = true
+	magnet_timer = 0.0
+	shield_active = false
+	rocket_timer = 0.0
+	doubler_timer = 0.0
+	invulnerable_timer = 0.0
+	if _shield_mesh:
+		_shield_mesh.visible = false
+	_update_powerup_dock()
 	shake_camera(0.8)
 	var hitbox: Area3D = $collision_area
 	hitbox.monitoring = false
@@ -969,14 +1229,13 @@ func _start_death() -> void:
 		if a:
 			death_wait = maxf(a.length, 0.5)
 	await get_tree().create_timer(death_wait, true).timeout
-	if RunSession.offline_mode:
-		_finish_success = true
-		if coin_count > AuthSession.best_coins:
-			AuthSession.set_auth({"best_coins": coin_count})
-		_finish_data = {"final_coins": coin_count}
-		_show_game_over_loading()
-		_trigger_game_over()
-		return
+	RunManager.run_total_coins = coin_count
+	if not _finish_done:
+		var level = get_tree().get_first_node_in_group("level")
+		var current_dist: float = 0.0
+		if level and "run_distance" in level:
+			current_dist = level.run_distance / 2.0
+		RunManager.submit_finish(current_dist)
 	_show_game_over_loading()
 	if _finish_done:
 		_trigger_game_over()
@@ -1047,14 +1306,30 @@ func _trigger_game_over() -> void:
 		_menu_btn.disabled = false
 
 	var lines: PackedStringArray = PackedStringArray()
-	if _finish_success:
-		var display_coins: int = int(_finish_data.get("final_coins", 0))
-		lines.append("Coins %d" % display_coins)
-		var rank: int = int(_finish_data.get("rank", 0))
-		if rank > 0:
-			lines.append("Rank #%d" % rank)
+	var display_distance: int = 0
+	if _finish_data.has("final_distance"):
+		display_distance = int(_finish_data["final_distance"])
+	elif _finish_data.has("submitted_distance"):
+		display_distance = int(_finish_data["submitted_distance"])
 	else:
-		lines.append(GameSettings.USER_ERROR_MSG)
+		var level = get_tree().get_first_node_in_group("level")
+		if level and "run_distance" in level:
+			display_distance = int(level.run_distance / 2.0)
+
+	var display_coins: int = coin_count
+	if _finish_data.has("final_coins"):
+		display_coins = int(_finish_data["final_coins"])
+
+	lines.append("Distance: %dm" % display_distance)
+	lines.append("Coins: +%d" % display_coins)
+	lines.append("Total Coins: %d" % SaveManager.total_coins)
+
+	var is_new_best: bool = bool(_finish_data.get("is_new_best", false)) or (display_distance > SaveManager.best_distance)
+
+	if is_new_best:
+		lines.append("🌟 NEW RECORD! 🌟")
+	else:
+		lines.append("Best: %dm" % SaveManager.best_distance)
 
 	result_label.text = "\n".join(lines)
 	overlay.visible = true
@@ -1067,14 +1342,11 @@ func _on_collision_area_entered(area) -> void:
 	var parent = area.get_parent()
 	if parent.is_in_group("coins"):
 		_play_coin_sfx()
-		coin_count += 1
+		var coin_val: int = 2 if doubler_timer > 0.0 else 1
+		coin_count += coin_val
+		RunManager.run_total_coins = coin_count
 		_refresh_coin_hud()
-		var level := get_tree().get_first_node_in_group("level")
-		if level and level.has_method("get_segment_distance"):
-			var oid: int = int(parent.get_meta("object_id", -1))
-			var lane: int = int(parent.get_meta("spawn_lane", current_lane))
-			var dist: float = float(parent.get_meta("map_distance", level.get_segment_distance()))
-			MoveLog.log_coin(oid, lane, dist)
+
 		if parent.has_method("collect"):
 			parent.collect()
 		else:
@@ -1089,3 +1361,238 @@ func _play_coin_sfx() -> void:
 	if OS.has_feature("web"):
 		BrowserBridge.unlock_web_audio()
 	audio_player.play()
+
+
+func is_invulnerable() -> bool:
+	return rocket_timer > 0.0 or invulnerable_timer > 0.0
+
+
+func has_shield() -> bool:
+	return shield_active
+
+
+func consume_shield() -> void:
+	shield_active = false
+	invulnerable_timer = 1.5
+	if _shield_mesh:
+		_shield_mesh.visible = false
+	shake_camera(0.6)
+	_spawn_floating_coin_popup("SHIELD BROKE!")
+	_update_powerup_dock()
+
+
+func _try_activate_powerup(id: String) -> void:
+	if not game_started or is_dead or dying or game_over:
+		return
+	if id == "shield" and shield_active:
+		_spawn_floating_coin_popup("Shield already ON!")
+		return
+	if SaveManager.get_powerup_count(id) <= 0:
+		_spawn_floating_coin_popup("0 Owned - Buy in Store!")
+		return
+	if SaveManager.use_powerup(id):
+		activate_powerup(id)
+
+
+func activate_powerup(id: String) -> void:
+	match id:
+		"coin_magnet":
+			magnet_timer = 15.0
+			_spawn_floating_coin_popup("🧲 MAGNET ON!")
+			if audio_player and audio_player.stream:
+				_play_coin_sfx()
+		"shield":
+			shield_active = true
+			if _shield_mesh:
+				_shield_mesh.visible = true
+			_spawn_floating_coin_popup("🛡️ SHIELD ON!")
+		"rocket_boost":
+			rocket_timer = 7.0
+			shake_camera(0.4)
+			_spawn_floating_coin_popup("🚀 ROCKET BOOST!")
+		"coin_doubler":
+			doubler_timer = 20.0
+			_spawn_floating_coin_popup("✖️2 MULTIPLIER!")
+	_update_powerup_dock()
+
+
+func _setup_shield_mesh() -> void:
+	if _shield_mesh != null:
+		return
+	_shield_mesh = MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.95
+	sphere.height = 1.9
+	_shield_mesh.mesh = sphere
+	_shield_mesh.position = Vector3(0, 0.95, 0)
+	
+	_shield_mat = StandardMaterial3D.new()
+	_shield_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_shield_mat.albedo_color = Color(0.15, 0.8, 1.0, 0.35)
+	_shield_mat.emission_enabled = true
+	_shield_mat.emission = Color(0.0, 0.9, 1.0)
+	_shield_mat.emission_energy_multiplier = 1.5
+	_shield_mat.rim_enabled = true
+	_shield_mat.rim = 0.8
+	_shield_mesh.material_override = _shield_mat
+	_shield_mesh.visible = false
+	add_child(_shield_mesh)
+
+
+func _setup_powerup_hud(parent: Node) -> void:
+	if _powerup_dock != null:
+		return
+	_powerup_dock = PanelContainer.new()
+	_powerup_dock.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
+	var dock_style := StyleBoxFlat.new()
+	dock_style.bg_color = Color(0.04, 0.06, 0.1, 0.82)
+	dock_style.set_corner_radius_all(14)
+	dock_style.border_color = Color(0.25, 0.4, 0.6, 0.8)
+	dock_style.set_border_width_all(2)
+	dock_style.content_margin_left = 6
+	dock_style.content_margin_right = 6
+	dock_style.content_margin_top = 6
+	dock_style.content_margin_bottom = 6
+	_powerup_dock.add_theme_stylebox_override("panel", dock_style)
+	parent.add_child(_powerup_dock)
+
+	var hbox := HBoxContainer.new()
+	hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hbox.add_theme_constant_override("separation", 8)
+	_powerup_dock.add_child(hbox)
+
+	var items = [
+		{"id": "coin_magnet", "icon": "🧲", "key": "1", "name": "MAGNET"},
+		{"id": "shield", "icon": "🛡️", "key": "2", "name": "SHIELD"},
+		{"id": "rocket_boost", "icon": "🚀", "key": "3", "name": "ROCKET"},
+		{"id": "coin_doubler", "icon": "✖️2", "key": "4", "name": "2X"},
+	]
+
+	for item in items:
+		var slot := _create_powerup_slot(item["id"], item["icon"], item["key"], item["name"])
+		hbox.add_child(slot)
+		_powerup_slots[item["id"]] = slot
+
+	if not SaveManager.inventory_changed.is_connected(_update_powerup_dock):
+		SaveManager.inventory_changed.connect(_update_powerup_dock)
+
+	_update_powerup_dock()
+
+
+func _create_powerup_slot(id: String, icon: String, key_num: String, _short_name: String) -> Button:
+	var btn := Button.new()
+	btn.custom_minimum_size = Vector2(56, 56)
+	btn.mouse_filter = Control.MOUSE_FILTER_STOP
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+
+	var normal_sb := StyleBoxFlat.new()
+	normal_sb.bg_color = Color(0.1, 0.15, 0.22, 0.9)
+	normal_sb.set_corner_radius_all(10)
+	normal_sb.set_border_width_all(2)
+	normal_sb.border_color = Color(0.3, 0.45, 0.65, 0.8)
+	btn.add_theme_stylebox_override("normal", normal_sb)
+	
+	var hover_sb := normal_sb.duplicate()
+	hover_sb.border_color = Color(0.4, 0.7, 1.0, 1.0)
+	btn.add_theme_stylebox_override("hover", hover_sb)
+	
+	var pressed_sb := normal_sb.duplicate()
+	pressed_sb.bg_color = Color(0.18, 0.26, 0.38, 0.95)
+	btn.add_theme_stylebox_override("pressed", pressed_sb)
+
+	var font = HudSign.get_hud_font()
+
+	var vbox := VBoxContainer.new()
+	vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_theme_constant_override("separation", 1)
+	btn.add_child(vbox)
+
+	var icon_label := Label.new()
+	icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	icon_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon_label.text = icon
+	icon_label.add_theme_font_size_override("font_size", 18)
+	vbox.add_child(icon_label)
+
+	var status_label := Label.new()
+	status_label.name = "StatusLabel"
+	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if font:
+		status_label.add_theme_font_override("font", font)
+	status_label.add_theme_font_size_override("font_size", 11)
+	status_label.add_theme_color_override("font_color", Color(0.9, 0.95, 1.0))
+	status_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	status_label.add_theme_constant_override("outline_size", 4)
+	status_label.text = "[%s]" % key_num
+	vbox.add_child(status_label)
+
+	btn.pressed.connect(func(): _try_activate_powerup(id))
+	return btn
+
+
+func _update_powerup_dock() -> void:
+	if _powerup_dock == null:
+		return
+	var dock_visible: bool = game_started and not is_dead and not dying and not game_over
+	_powerup_dock.visible = dock_visible
+	if not dock_visible:
+		return
+
+	for id in _powerup_slots.keys():
+		var slot: Button = _powerup_slots[id]
+		var count: int = SaveManager.get_powerup_count(id)
+		var status_label: Label = slot.find_child("StatusLabel", true, false)
+		var key_num := "1"
+		match id:
+			"coin_magnet": key_num = "1"
+			"shield": key_num = "2"
+			"rocket_boost": key_num = "3"
+			"coin_doubler": key_num = "4"
+
+		var is_active: bool = false
+		var active_str: String = ""
+		match id:
+			"coin_magnet":
+				if magnet_timer > 0.0:
+					is_active = true
+					active_str = "%ds" % int(ceilf(magnet_timer))
+			"shield":
+				if shield_active:
+					is_active = true
+					active_str = "ON"
+			"rocket_boost":
+				if rocket_timer > 0.0:
+					is_active = true
+					active_str = "%ds" % int(ceilf(rocket_timer))
+			"coin_doubler":
+				if doubler_timer > 0.0:
+					is_active = true
+					active_str = "%ds" % int(ceilf(doubler_timer))
+
+		var normal_sb: StyleBoxFlat = slot.get_theme_stylebox("normal")
+		if normal_sb:
+			if is_active:
+				normal_sb.border_color = Color(1.0, 0.85, 0.2, 1.0)
+				normal_sb.bg_color = Color(0.2, 0.25, 0.1, 0.95)
+			elif count > 0:
+				normal_sb.border_color = Color(0.3, 0.6, 0.9, 0.85)
+				normal_sb.bg_color = Color(0.1, 0.15, 0.22, 0.9)
+			else:
+				normal_sb.border_color = Color(0.3, 0.35, 0.4, 0.4)
+				normal_sb.bg_color = Color(0.08, 0.1, 0.13, 0.6)
+
+		if status_label:
+			if is_active:
+				status_label.text = active_str
+				status_label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.2))
+			elif count > 0:
+				status_label.text = "[%s] x%d" % [key_num, count]
+				status_label.add_theme_color_override("font_color", Color(0.9, 0.95, 1.0))
+			else:
+				status_label.text = "[%s] 0" % key_num
+				status_label.add_theme_color_override("font_color", Color(0.6, 0.65, 0.7))
